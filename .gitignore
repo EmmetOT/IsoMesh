@@ -1,0 +1,55 @@
+###
+# Unity folders and files
+###
+[Ii]so[Mm]esh/[Aa]ssets/AssetStoreTools*
+[Ii]so[Mm]esh/[Bb]uild/
+[Ii]so[Mm]esh/[Ll]ibrary/
+[Ii]so[Mm]esh/[Ll]ocal[Cc]ache/
+[Ii]so[Mm]esh/[Oo]bj/
+[Ii]so[Mm]esh/[Tt]emp/
+[Ii]so[Mm]esh/[Uu]nityGenerated/
+# file on crash reports
+sysinfo.txt
+# Unity3D generated meta files
+*.pidb.meta
+
+###
+# Unity specific files
+###
+[Ii]so[Mm]esh/[Pp]roject[Ss]ettings/[Pp]ackages/com.unity.probuilder/Settings.json
+
+###
+# VS/MD solution and project files
+###
+[Ee]xportedObj/
+*.booproj
+*.csproj
+*.sln
+*.suo
+*.svd
+*.unityproj
+*.user
+*.userprefs
+*.pidb
+.DS_Store
+
+###
+# OS generated
+###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# Ignore the auto-generated AOT compatibility dll.
+[Ii]so[Mm]esh/[Aa]ssets/Plugins/Sirenix/Assemblies/AOT/*
+
+# Ignore all unpacked demos.
+[Ii]so[Mm]esh/[Aa]ssets/Plugins/Sirenix/Demos/*
+
+# But keep the demo packages themselves.
+[Ii]so[Mm]esh/[Aa]ssets/Plugins/Sirenix/Demos/*.unitypackage 
