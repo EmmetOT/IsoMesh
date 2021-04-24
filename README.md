@@ -86,6 +86,8 @@ You can also directly visualize the UVs and iteration count.
 * None of this stuff is particularly cheap on the GPU. I made no special effort to avoid branching and I could probably use less kernels in the mesh generation process.
 * Undo is not fully supported in custom editors yet.
 * Some items, especially SDF meshes, don't always cope nicely with all the different transitions Unity goes to, like entering play mode, or recompiling. I've spent a lot of time improving stability in this regard but it's not yet 100%.
+* I don't currently use any sort of adaptive octree approach. I consider this a "nice to have."
+* I might make a component to automate the "chunking" process, basically just currently positioning the distinct SDFGroupMeshGenerator components, disabling occluded ones, spawning new ones, etc.
 
 ![isomesh9](https://user-images.githubusercontent.com/18707147/115975715-03410100-a55f-11eb-8c41-3b983217ba64.gif)
 
