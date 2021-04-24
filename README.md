@@ -97,4 +97,4 @@ You can also directly visualize the UVs and iteration count.
 * [Kosmonaut's Signed Distance Field Journey - a fellow SDF mesh creator](https://kosmonautblog.wordpress.com/2017/05/01/signed-distance-field-rendering-journey-pt-1/)
 * [DreamCat Games' tutorial on Surface Nets](https://bonsairobo.medium.com/smooth-voxel-mapping-a-technical-deep-dive-on-real-time-surface-nets-and-texturing-ef06d0f8ca14)
 * [Local interpolation of surfaces using normal vectors - I use this during the tessellation process to produce smoother geometry](https://stackoverflow.com/questions/25342718/local-interpolation-of-surfaces-using-normal-vectors)
-* [Nick's Voxel Blog - good source for learning about implementing the QEF minimizer](http://ngildea.blogspot.com/)
+* [Nick's Voxel Blog - good source for learning about implementing the QEF minimizer](http://ngildea.blogspot.com/) [(and their github repo)](https://github.com/nickgildea/qef)
