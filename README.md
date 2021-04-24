@@ -60,7 +60,7 @@ You may notice there is an option to switch between 'Procedural' and 'Mesh Filte
 I'll probably want to make these generated meshes interact physically in the future anyway, which will unfortunately require the meshes on the CPU side too.
 
 ## Raymarching
-If you're familiar with SDFs, you're familiar with Raymarching. They very often go hand-in-hand. [Raymarching will also be very familiar to you if you ever go on ShaderToy.](https://www.shadertoy.com/results?query=raymarch) Again I recommend checking out Inigo Quilez for an in-depth explanation, but raymarching is basically an iterative sort of 'pseudo-raytracing' algorithm for rendering complex surfaces like SDFs.
+If you're familiar with SDFs, you're familiar with raymarching. They very often go hand-in-hand. [Raymarching will also be very familiar to you if you ever go on ShaderToy.](https://www.shadertoy.com/results?query=raymarch) Again I recommend checking out Inigo Quilez for an in-depth explanation, but raymarching is basically an iterative sort of 'pseudo-raytracing' algorithm for rendering complex surfaces like SDFs.
 
 In this project you can use an SDFGroupRaymarcher to visualize your SDFGroup. This component basically just creates a cube mesh and assigns it a special raymarching material. The resulting visual is much more accurate than the isosurface extraction, but it's expensive just to look at: unlike isosurface extraction which is just doing nothing while you're not manipulating the SDFs, raymarching is an active process on your GPU.
 
