@@ -40,11 +40,11 @@ An 'isosurface' is the bits of a scalar field which all have the same values. In
 
 Isosurface extraction here refers to converting an isosurface back into a triangle mesh. There are many different algorithms for isosurface extraction, perhaps the most well known being the 'marching cubes' algorithm. In this project, I implemented two (very similar) isosurface extraction algorithms: surface nets and dual contouring. I won't go into any more detail on these algorithms here, [as others have already explained them very well.](https://www.boristhebrave.com/2018/04/15/dual-contouring-tutorial/)
 
-As I say above, in order to use the isosurface extraction just add a SDFGroupMeshGenerator under an SDFGroup. The number of options on this component is almost excessive, but don't let that get you down, they all have tooltips which do some explaining, and if you've done your homework they should feel fairly familiarly:
+As I say above, in order to use the isosurface extraction just add a SDFGroupMeshGenerator under an SDFGroup. The number of options on this component is almost excessive, but don't let that get you down, they all have tooltips which do some explaining, and if you've done your homework they should feel fairly familiar:
 
 ![isomesh3](https://user-images.githubusercontent.com/18707147/115974664-1a2f2580-a556-11eb-83f0-c51895dd9d52.png)
 
-Normal settings are handy to control the appearance of the mesh surface. 'Max angle tolerance' will generate new mesh vertices when normals are too distinct from the nomral of their triangle. I like to keep this value around 40 degrees, as it retains sharp edges while keeping smooth curves. 'Visual smoothing' changes the distance between samples when generating mesh normals via central differences.
+Normal settings are handy to control the appearance of the mesh surface. 'Max angle tolerance' will generate new mesh vertices when normals are too distinct from the normal of their triangle. I like to keep this value around 40 degrees, as it retains sharp edges while keeping smooth curves. 'Visual smoothing' changes the distance between samples when generating mesh normals via central differences.
 
 ![isomesh4](https://user-images.githubusercontent.com/18707147/115974786-21a2fe80-a557-11eb-84a0-62c28b537501.png)
 
@@ -64,7 +64,7 @@ If you're familiar with SDFs, you're familiar with raymarching. They very often 
 
 In this project you can use an SDFGroupRaymarcher to visualize your SDFGroup. This component basically just creates a cube mesh and assigns it a special raymarching material. The resulting visual is much more accurate than the isosurface extraction, but it's expensive just to look at: unlike isosurface extraction which is just doing nothing while you're not manipulating the SDFs, raymarching is an active process on your GPU.
 
-The actual raymarching material is set up to be easy to modify - it's built around this subgraph:
+The raymarching material is set up to be easy to modify - it's built around this subgraph:
 
 ![isomesh5](https://user-images.githubusercontent.com/18707147/115975216-c5da7480-a55a-11eb-9452-18740e81286b.png)
 
@@ -100,3 +100,4 @@ You can also directly visualize the UVs and iteration count.
 * [DreamCat Games' tutorial on Surface Nets](https://bonsairobo.medium.com/smooth-voxel-mapping-a-technical-deep-dive-on-real-time-surface-nets-and-texturing-ef06d0f8ca14)
 * [Local interpolation of surfaces using normal vectors - I use this during the tessellation process to produce smoother geometry](https://stackoverflow.com/questions/25342718/local-interpolation-of-surfaces-using-normal-vectors)
 * [Nick's Voxel Blog - good source for learning about implementing the QEF minimizer](http://ngildea.blogspot.com/) [(and their github repo)](https://github.com/nickgildea/qef)
+* [MudBun - I came across this tool while already deep in development of this, but it looks awesome and way more clean and professional than this learning exercise.](https://assetstore.unity.com/packages/tools/particles-effects/mudbun-volumetric-vfx-mesh-tool-177891)
