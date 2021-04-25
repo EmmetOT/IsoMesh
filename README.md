@@ -13,7 +13,7 @@ A signed distance field, or 'SDF', is a function which takes a position in space
 If you're unfamiliar with SDFs, I would be remiss if I didn't point you to the great [Inigo Quilez](https://www.iquilezles.org/). I'm sure his stuff will do a much better job explaining it than I could.
 
 ### Signed Distance Fields + Meshes
-While SDFs are really handy, they're mostly good for representing primitive shapes like spheres, cuboids, cones, etc. You can make some pretty impressive stuff just by combining and apply transformations to those forms, but for this project I wanted to try combine the mushy goodness of SDFs with the versatility of triangle meshes. I do this by sampling points in a bounding box around a mesh, and then interpolating the in-between bits.
+While SDFs are really handy, they're mostly good for representing primitive shapes like spheres, cuboids, cones, etc. You can make some pretty impressive stuff just by combining and applying transformations to those forms, but for this project I wanted to try combine the mushy goodness of SDFs with the versatility of triangle meshes. I do this by sampling points in a bounding box around a mesh, and then interpolating the in-between bits.
 
 #### Adding Meshes
 In order to add a mesh of your own, open Tools > 'Mesh to SDF'. Give it a mesh reference and select a sample size, I suggest 64. Remember this is cubic, so the workload and resulting file size increases very quickly.
