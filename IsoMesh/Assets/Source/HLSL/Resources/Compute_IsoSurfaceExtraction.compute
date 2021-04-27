@@ -13,9 +13,6 @@
 int _QEFSweeps;
 float _QEFPseudoInverseThreshold;
 
-// used in MapSignedDistanceField.hlsl
-//#define APPLY_GROUP_TRANSFORM
-
 #include "../Common.hlsl"
 #include "../QEFFunctions.cginc"
 #include "../Compute_IsoSurfaceExtraction_Structs.hlsl"

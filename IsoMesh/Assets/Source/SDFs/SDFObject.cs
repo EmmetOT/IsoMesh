@@ -24,27 +24,16 @@ public abstract class SDFObject : MonoBehaviour
     [SerializeField]
     protected SDFOp m_operation;
     public SDFOp Operation => m_operation;
-    
-    private bool m_isDirty = false;
-    private bool m_isOrderDirty = false;
-    
-    // used by attributes
-    protected void SetDirty()
-    {
-        m_isDirty = true;
-    }
 
+    [SerializeField]
+    protected bool m_flip = false;
+    public bool Flip => m_flip;
+
+    protected bool m_isDirty = false;
+    
     private int m_lastSeenSiblingIndex = -1;
 
     public bool IsDirty => m_isDirty;
-    public bool IsOrderDirty => m_isOrderDirty;
-
-    public void SetClean()
-    {
-        m_isDirty = false;
-        transform.hasChanged = false;
-        m_isOrderDirty = false;
-    }
 
     protected virtual void Awake() => TryRegister();
     protected virtual void Reset() => TryRegister();
@@ -69,6 +58,16 @@ public abstract class SDFObject : MonoBehaviour
         SetDirty();
     }
 
+    public abstract SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1);
+
+    protected void SetDirty() => m_isDirty = true;
+
+    public void SetClean()
+    {
+        m_isDirty = false;
+        transform.hasChanged = false;
+    }
+
     protected virtual void Update()
     {
         m_isDirty |= transform.hasChanged;
@@ -78,7 +77,7 @@ public abstract class SDFObject : MonoBehaviour
         if (siblingIndex != m_lastSeenSiblingIndex)
         {
             if (m_lastSeenSiblingIndex != -1)
-                m_isOrderDirty = true;
+                m_isDirty = true;
             
             m_lastSeenSiblingIndex = siblingIndex;
         }

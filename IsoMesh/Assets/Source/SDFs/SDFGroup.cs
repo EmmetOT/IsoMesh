@@ -25,13 +25,12 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     private bool m_isRunning = true;
     public void SetRunning(bool isRunning) => m_isRunning = isRunning;
 
-    private bool m_isReady = false;
     private bool m_forceUpdateNextFrame = false;
 
     /// <summary>
     /// Whether this group is fully set up, e.g. all the buffers are created.
     /// </summary>
-    public bool IsReady => m_isReady;
+    public bool IsReady { get; private set; } = false;
 
     [SerializeField]
     [HideInInspector]
@@ -59,19 +58,15 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     }
 
     private List<ISDFGroupComponent> m_sdfComponents = new List<ISDFGroupComponent>();
-
-    private ComputeBuffer m_primitiveDataBuffer;
-    public ComputeBuffer PrimitivesBuffer => m_primitiveDataBuffer;
-
-    private ComputeBuffer m_localMeshDataBuffer;
+    
+    private ComputeBuffer m_dataBuffer;
 
     private ComputeBuffer m_settingsBuffer;
     public ComputeBuffer SettingsBuffer => m_settingsBuffer;
 
     private Settings[] m_settingsArray = new Settings[1];
 
-    private List<SDFPrimitive> m_sdfPrimitives = new List<SDFPrimitive>();
-    private List<SDFMesh> m_localSDFMeshes = new List<SDFMesh>();
+    private List<SDFObject> m_sdfObjects = new List<SDFObject>();
 
     private static readonly List<SDFMesh> m_globalSDFMeshes = new List<SDFMesh>();
     private static readonly Dictionary<int, int> m_meshSdfSampleStartIndices = new Dictionary<int, int>();
@@ -82,116 +77,81 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
     private static ComputeBuffer m_meshSamplesBuffer;
     private static ComputeBuffer m_meshPackedUVsBuffer;
+    
+    private List<SDFGPUData> m_data = new List<SDFGPUData>();
+    private readonly List<int> m_dataSiblingIndices = new List<int>();
 
-    private readonly List<SDFPrimitive.GPUData> m_primitivesData = new List<SDFPrimitive.GPUData>();
-    private readonly List<SDFMesh.GPUData> m_localMeshData = new List<SDFMesh.GPUData>();
-
-    public bool IsEmpty => m_localSDFMeshes.IsNullOrEmpty() && m_sdfPrimitives.IsNullOrEmpty();//
+    public bool IsEmpty => m_sdfObjects.IsNullOrEmpty();
 
     // dirty flags. we only need one for the primitives, but two for the meshes. this is because
     // i want to avoid doing a 'full update' of the meshes unless i really need to.
 
     private static bool m_isGlobalMeshDataDirty = true;
-
-    private bool m_isPrimitivesListDirty = true;
-    private bool m_isPrimitiveListOrderDirty = true;
-    private bool m_isLocalMeshDataDirty = true;
+    private bool m_isLocalDataDirty = true;
 
     #endregion
 
     #region Registration
 
-    public void Register(SDFPrimitive sdfObject)
+    public void Register(SDFObject sdfObject)
     {
-        if (m_sdfPrimitives.Contains(sdfObject))
+        if (m_sdfObjects.Contains(sdfObject))
             return;
 
         bool wasEmpty = IsEmpty;
 
-        m_sdfPrimitives.Add(sdfObject);
-        m_isPrimitivesListDirty = true;
+        m_sdfObjects.Add(sdfObject);
+        m_isLocalDataDirty = true;
 
         // this is almost certainly overkill, but i like the kind of guaranteed stability
-        ClearNulls(m_sdfPrimitives);
+        ClearNulls(m_sdfObjects);
 
-        if (wasEmpty && !IsEmpty)
-            for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].OnNotEmpty();
-
-        RequestUpdate();
-    }
-
-    public void Deregister(SDFPrimitive sdfObject)
-    {
-        bool wasEmpty = IsEmpty;
-
-        if (m_sdfPrimitives.Remove(sdfObject))
-            m_isPrimitivesListDirty = true;
-
-        // this is almost certainly overkill, but i like the kind of guaranteed stability
-        ClearNulls(m_sdfPrimitives);
-
-        if (!wasEmpty && IsEmpty)
-            for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].OnEmpty();
-
-        RequestUpdate();
-    }
-
-    public void Register(SDFMesh sdfMesh)
-    {
-        if (m_localSDFMeshes.Contains(sdfMesh))
-            return;
-
-        // check if this is a totally new mesh that no group has seen
-        if (!m_globalSDFMeshes.Contains(sdfMesh))
+        if (sdfObject is SDFMesh sdfMesh)
         {
-            m_globalSDFMeshes.Add(sdfMesh);
-            m_isGlobalMeshDataDirty = true;
-        }
-
-        // keep track of how many groups contain a local reference to this sdfmesh
-        if (!m_meshCounts.ContainsKey(sdfMesh.ID))
-            m_meshCounts.Add(sdfMesh.ID, 0);
-
-        m_meshCounts[sdfMesh.ID]++;
-
-        bool wasEmpty = IsEmpty;
-
-        m_localSDFMeshes.Add(sdfMesh);
-
-        // this is almost certainly overkill, but i like the kind of guaranteed stability
-        ClearNulls(m_localSDFMeshes);
-
-        if (wasEmpty && !IsEmpty)
-            for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].OnNotEmpty();
-
-        m_isLocalMeshDataDirty = true;
-
-        RequestUpdate();
-    }
-
-    public void Deregister(SDFMesh sdfMesh)
-    {
-        if (!m_localSDFMeshes.Remove(sdfMesh))
-            return;
-
-        m_isLocalMeshDataDirty = true;
-
-        // if this was the only group referencing this sdfmesh, we can remove it from the global buffer too
-        if (m_meshCounts.ContainsKey(sdfMesh.ID))
-        {
-            m_meshCounts[sdfMesh.ID]--;
-
-            if (m_meshCounts[sdfMesh.ID] <= 0 && m_globalSDFMeshes.Remove(sdfMesh))
+            // check if this is a totally new mesh that no group has seen
+            if (!m_globalSDFMeshes.Contains(sdfMesh))
+            {
+                m_globalSDFMeshes.Add(sdfMesh);
                 m_isGlobalMeshDataDirty = true;
+            }
+
+            // keep track of how many groups contain a local reference to this sdfmesh
+            if (!m_meshCounts.ContainsKey(sdfMesh.ID))
+                m_meshCounts.Add(sdfMesh.ID, 0);
+
+            m_meshCounts[sdfMesh.ID]++;
         }
 
+        if (wasEmpty && !IsEmpty)
+            for (int i = 0; i < m_sdfComponents.Count; i++)
+                m_sdfComponents[i].OnNotEmpty();
+
+        RequestUpdate();
+    }
+    
+    public void Deregister(SDFObject sdfObject)
+    {
         bool wasEmpty = IsEmpty;
 
+        if (!m_sdfObjects.Remove(sdfObject))
+            return;
+
+        if (sdfObject is SDFMesh sdfMesh)
+        {
+            // if this was the only group referencing this sdfmesh, we can remove it from the global buffer too
+            if (m_meshCounts.ContainsKey(sdfMesh.ID))
+            {
+                m_meshCounts[sdfMesh.ID]--;
+
+                if (m_meshCounts[sdfMesh.ID] <= 0 && m_globalSDFMeshes.Remove(sdfMesh))
+                    m_isGlobalMeshDataDirty = true;
+            }
+        }
+        
+        m_isLocalDataDirty = true;
+
         // this is almost certainly overkill, but i like the kind of guaranteed stability
-        ClearNulls(m_localSDFMeshes);
+        ClearNulls(m_sdfObjects);
 
         if (!wasEmpty && IsEmpty)
             for (int i = 0; i < m_sdfComponents.Count; i++)
@@ -199,8 +159,8 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
         RequestUpdate();
     }
-
-    public bool IsRegistered(SDFMesh mesh) => !m_localSDFMeshes.IsNullOrEmpty() && m_localSDFMeshes.Contains(mesh);
+    
+    public bool IsRegistered(SDFObject sdfObject) => !m_sdfObjects.IsNullOrEmpty() && m_sdfObjects.Contains(sdfObject);
 
     #endregion
 
@@ -210,9 +170,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     {
         m_isEnabled = true;
         m_isGlobalMeshDataDirty = true;
-        m_isPrimitivesListDirty = true;
-        m_isLocalMeshDataDirty = true;
-        m_isPrimitiveListOrderDirty = true;
+        m_isLocalDataDirty = true;
 
         RequestUpdate(onlySendBufferOnChange: false);
         m_forceUpdateNextFrame = true;
@@ -221,9 +179,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     private void Start()
     {
         m_isGlobalMeshDataDirty = true;
-        m_isPrimitivesListDirty = true;
-        m_isLocalMeshDataDirty = true;
-        m_isPrimitiveListOrderDirty = true;
+        m_isLocalDataDirty = true;
 
         RequestUpdate(onlySendBufferOnChange: false);
         m_forceUpdateNextFrame = true;
@@ -232,10 +188,9 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     private void OnDisable()
     {
         m_isEnabled = false;
-        m_isReady = false;
-
-        m_primitiveDataBuffer?.Dispose();
-        m_localMeshDataBuffer?.Dispose();
+        IsReady = false;
+        
+        m_dataBuffer?.Dispose();
         m_settingsBuffer?.Dispose();
     }
 
@@ -252,59 +207,29 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         if (!m_isRunning)
             return;
 
-        if (!m_isReady)
+        if (!IsReady)
             RequestUpdate();
 
         bool nullHit = false;
-        for (int i = 0; i < m_sdfPrimitives.Count; i++)
+        for (int i = 0; i < m_sdfObjects.Count; i++)
         {
-            bool isNull = !m_sdfPrimitives[i];
+            bool isNull = !m_sdfObjects[i];
 
             nullHit |= isNull;
 
             if (!isNull)
-            {
-                m_isPrimitivesListDirty |= m_sdfPrimitives[i].IsDirty;
-                m_isPrimitiveListOrderDirty |= m_sdfPrimitives[i].IsOrderDirty;
-            }
+                m_isLocalDataDirty |= m_sdfObjects[i].IsDirty;
         }
-
-        // todo: can improve this so it doesn't make allocations
-        if (m_isPrimitiveListOrderDirty)
-            m_sdfPrimitives = m_sdfPrimitives.OrderBy(p => p.transform.GetSiblingIndex()).ToList();
-
+        
         if (nullHit)
-            ClearNulls(m_sdfPrimitives);
-
-        // todo: reorder meshes, same as primitives
-        nullHit = false;
-        for (int i = 0; i < m_localSDFMeshes.Count; i++)
-        {
-            bool isNull = !m_localSDFMeshes[i];
-
-            nullHit |= isNull;
-
-            if (!isNull)
-            {
-                m_isLocalMeshDataDirty |= m_localSDFMeshes[i].IsDirty;
-            }
-        }
-
-        if (nullHit)
-            ClearNulls(m_localSDFMeshes);
+            ClearNulls(m_sdfObjects);
 
         bool changed = false;
-
-        if (m_forceUpdateNextFrame || m_isPrimitivesListDirty || transform.hasChanged)
+        
+        if (m_forceUpdateNextFrame || m_isGlobalMeshDataDirty || m_isLocalDataDirty || transform.hasChanged)
         {
             changed = true;
-            RebuildPrimitiveData();
-        }
-
-        if (m_forceUpdateNextFrame || m_isGlobalMeshDataDirty || m_isLocalMeshDataDirty || transform.hasChanged)
-        {
-            changed = true;
-            RebuildLocalMeshData();
+            RebuildData();
         }
 
         m_forceUpdateNextFrame = false;
@@ -333,7 +258,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         // blocking readiness because we're updating 
         // all the information at once, we don't want groups to start acting
         // on the info immediately
-        m_isReady = false;
+        IsReady = false;
 
         m_sdfComponents.Clear();
         m_sdfComponents.AddRange(GetComponentsInChildren<ISDFGroupComponent>());
@@ -344,12 +269,11 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         else
             for (int i = 0; i < m_sdfComponents.Count; i++)
                 m_sdfComponents[i].OnNotEmpty();
-
-        RebuildLocalMeshData(onlySendBufferOnChange);
-        RebuildPrimitiveData(onlySendBufferOnChange);
+        
+        RebuildData(onlySendBufferOnChange);
         OnSettingsChanged();
 
-        m_isReady = true;
+        IsReady = true;
 
         if (!IsEmpty)
             for (int i = 0; i < m_sdfComponents.Count; i++)
@@ -362,7 +286,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     /// </summary>
     /// <param name="locals">List of SDFMesh objects to ensure are in the global list.</param>
     /// <param name="onlySendBufferOnChange">Whether to invoke the components and inform them the buffer has changed. This is only really necessary when the size changes.</param>
-    private static bool RebuildGlobalMeshData(IList<SDFMesh> locals, bool onlySendBufferOnChange = true)
+    private static bool RebuildGlobalMeshData(IList<SDFObject> locals, bool onlySendBufferOnChange = true)
     {
         int previousMeshSamplesCount = m_meshSamples.Count;
         int previousMeshUVsCount = m_meshPackedUVs.Count;
@@ -379,8 +303,8 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
                 m_globalSDFMeshes.RemoveAt(i);
 
         for (int i = 0; i < locals.Count; i++)
-            if (!m_globalSDFMeshes.Contains(locals[i]))
-                m_globalSDFMeshes.Add(locals[i]);
+            if (locals[i] is SDFMesh mesh && !m_globalSDFMeshes.Contains(mesh))
+                m_globalSDFMeshes.Add(mesh);
 
         // loop over each mesh, adding its samples/uvs to the sample buffer
         // and taking note of where each meshes samples start in the buffer.
@@ -420,7 +344,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         }
 
         if (m_meshSamples.Count > 0)
-            m_meshSamplesBuffer.SetData(m_meshSamples);//
+            m_meshSamplesBuffer.SetData(m_meshSamples);
 
         if (m_meshPackedUVsBuffer == null || !m_meshPackedUVsBuffer.IsValid() || previousMeshUVsCount != m_meshPackedUVs.Count)
         {
@@ -438,107 +362,82 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     }
 
     /// <summary>
-    /// Each group has its own list of sdf meshes it's actually monitoring. We need to store their transforms as well the start indices of their
-    /// sample and uv data in the static list.
+    /// Repopulate the data relating to SDF primitives (spheres, toruses, cuboids etc) and SDF meshes (which point to where in the list of sample and uv data they begin, and how large they are)
     /// </summary>
     /// <param name="onlySendBufferOnChange">Whether to invoke the components and inform them the buffer has changed. This is only really necessary when the size changes.</param>
-    private void RebuildLocalMeshData(bool onlySendBufferOnChange = true)
+    private void RebuildData(bool onlySendBufferOnChange = true)
     {
-        m_isLocalMeshDataDirty = false;
+        m_isLocalDataDirty = false;
 
+        // should we rebuild the buffers which contain mesh sample + uv data?
         bool globalBuffersChanged = false;
         if (m_meshSamplesBuffer == null || !m_meshSamplesBuffer.IsValid() || m_meshPackedUVsBuffer == null || !m_meshPackedUVsBuffer.IsValid() || m_isGlobalMeshDataDirty)
-            globalBuffersChanged = RebuildGlobalMeshData(m_localSDFMeshes, onlySendBufferOnChange);
+            globalBuffersChanged = RebuildGlobalMeshData(m_sdfObjects, onlySendBufferOnChange);
 
-        int previousCount = m_localMeshData.Count;
-        m_localMeshData.Clear();
+        // memorize the size of the array before clearing it, for later comparison
+        int previousCount = m_data.Count;
+        m_data.Clear();
+        m_dataSiblingIndices.Clear();
 
-        for (int i = 0; i < m_localSDFMeshes.Count; i++)
+        // add all the sdf objects
+        for (int i = 0; i < m_sdfObjects.Count; i++)
         {
-            SDFMesh mesh = m_localSDFMeshes[i];
+            SDFObject sdfObject = m_sdfObjects[i];
 
-            if (!mesh)
+            if (!sdfObject)
                 continue;
 
-            mesh.SetClean();
+            sdfObject.SetClean();
 
-            if (!m_meshSdfSampleStartIndices.TryGetValue(mesh.ID, out int sampleStartIndex))
-            {
-                RebuildGlobalMeshData(m_localSDFMeshes, onlySendBufferOnChange: true);
-                Debug.LogError("Local SDF Mesh " + mesh.Asset.name + " has ID " + mesh.ID + " which isn't present in the static sample dictionary!", mesh.Asset);
-                continue;
-            }
-
+            int meshStartIndex = -1;
             int uvStartIndex = -1;
 
-            if (mesh.Asset.HasUVs)
-                m_meshSdfUVStartIndices.TryGetValue(mesh.ID, out uvStartIndex);
+            if (sdfObject is SDFMesh mesh)
+            {
+                // get the index in the global samples buffer where this particular mesh's samples begin
+                if (!m_meshSdfSampleStartIndices.TryGetValue(mesh.ID, out int sampleStartIndex))
+                    globalBuffersChanged = RebuildGlobalMeshData(m_sdfObjects, onlySendBufferOnChange); // we don't recognize this mesh so we may need to rebuild the entire global list of mesh samples and UVs
 
-            SDFMesh.GPUData data = mesh.GetGPUData(sampleStartIndex, uvStartIndex);
-            m_localMeshData.Add(data);
+                // likewise, if this mesh has UVs, get the index where they begin too
+                if (mesh.Asset.HasUVs)
+                    m_meshSdfUVStartIndices.TryGetValue(mesh.ID, out uvStartIndex);
+            }
+
+            m_data.Add(sdfObject.GetSDFGPUData(meshStartIndex, uvStartIndex));
+            m_dataSiblingIndices.Add(sdfObject.transform.GetSiblingIndex());
         }
+        
+        // sort this list by sibling index, which ensures that this list is always in the same
+        // order as is shown in the unity hierarchy. this is important because some of the sdf operations are ordered
+        m_data = m_data.OrderBy(d => m_dataSiblingIndices[m_data.IndexOf(d)]).ToList();
 
         bool sendBuffer = !onlySendBufferOnChange;
-        if (m_localMeshDataBuffer == null || !m_localMeshDataBuffer.IsValid() || previousCount != m_localMeshData.Count)
+
+        // check whether we need to create a new buffer. buffers are fixed sizes so the most common occasion for this is simply a change of size
+        if (m_dataBuffer == null || !m_dataBuffer.IsValid() || previousCount != m_data.Count)
         {
             sendBuffer = true;
 
-            m_localMeshDataBuffer?.Dispose();
-            m_localMeshDataBuffer = new ComputeBuffer(Mathf.Max(1, m_localMeshData.Count), SDFMesh.GPUData.Stride, ComputeBufferType.Structured);
+            m_dataBuffer?.Dispose();
+            m_dataBuffer = new ComputeBuffer(Mathf.Max(1, m_data.Count), SDFGPUData.Stride, ComputeBufferType.Structured);
         }
 
+        // if the buffer is new, the size has changed, or if it's forced, we resend the buffer to the sdf group component classes
         if (sendBuffer)
         {
             for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].UpdateMeshMetadataBuffer(m_localMeshDataBuffer, m_localMeshData.Count);
+                m_sdfComponents[i].UpdateDataBuffer(m_dataBuffer, m_data.Count);
         }
 
-        if (m_localMeshData.Count > 0)
-            m_localMeshDataBuffer.SetData(m_localMeshData);
+        if (m_data.Count > 0)
+            m_dataBuffer.SetData(m_data);
 
+        // if we also changed the global mesh data buffer in this method, we need to send that as well
         if (!onlySendBufferOnChange || globalBuffersChanged)
         {
             for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].UpdateMeshSamplesBuffer(m_meshSamplesBuffer, m_meshPackedUVsBuffer);
+                m_sdfComponents[i].UpdateGlobalMeshDataBuffers(m_meshSamplesBuffer, m_meshPackedUVsBuffer);
         }
-    }
-
-    /// <summary>
-    /// Repopulate the data relating to SDF primitives (spheres, toruses, cuboids etc).
-    /// </summary>
-    /// <param name="onlySendBufferOnChange">Whether to invoke the components and inform them the buffer has changed. This is only really necessary when the size changes.</param>
-    private void RebuildPrimitiveData(bool onlySendBufferOnChange = true)
-    {
-        m_isPrimitivesListDirty = false;
-
-        int previousCount = m_primitivesData.Count;
-
-        m_primitivesData.Clear();
-
-        for (int i = 0; i < m_sdfPrimitives.Count; i++)
-        {
-            SDFPrimitive primitive = m_sdfPrimitives[i];
-            primitive.SetClean();
-
-            m_primitivesData.Add(primitive.GetGPUData());
-        }
-
-        bool sendBuffer = !onlySendBufferOnChange;
-        if (m_primitiveDataBuffer == null || !m_primitiveDataBuffer.IsValid() || previousCount != m_primitivesData.Count)
-        {
-            sendBuffer = true;
-
-            m_primitiveDataBuffer?.Dispose();
-            m_primitiveDataBuffer = new ComputeBuffer(Mathf.Max(1, m_primitivesData.Count), SDFPrimitive.GPUData.Stride, ComputeBufferType.Structured);
-        }
-
-        if (sendBuffer)
-        {
-            for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].UpdatePrimitivesDataBuffer(m_primitiveDataBuffer, m_primitivesData.Count);
-        }
-
-        m_primitiveDataBuffer.SetData(m_primitivesData);
     }
 
     #endregion
@@ -576,11 +475,8 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     }
 
     // this method only needs to be here because ISerializationCallbackReceiver demands it :O
-    public void OnAfterDeserialize()
-    {
-    }
-
-
+    public void OnAfterDeserialize() { }
+    
     #endregion
 
     #region Structs

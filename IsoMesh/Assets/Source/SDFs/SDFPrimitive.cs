@@ -63,13 +63,10 @@ public class SDFPrimitive : SDFObject
     private Vector4 m_data = new Vector4(1f, 1f, 1f, 0f);
     public Vector4 Data => m_data;
 
-    [SerializeField]
-    private bool m_flip = false;
-    public bool Flip => m_flip;
-
-    public GPUData GetGPUData()
+    public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
     {
-        return new GPUData
+        // note: has room for six more floats (minbounds, maxbounds)
+        return new SDFGPUData
         {
             Type = (int)m_type,
             Data = m_data,
@@ -77,24 +74,6 @@ public class SDFPrimitive : SDFObject
             Operation = (int)m_operation,
             Flip = m_flip ? -1 : 1
         };
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    [System.Serializable]
-    public struct GPUData
-    {
-        public static int Stride => sizeof(int) * 3 + sizeof(float) * 4 + sizeof(float) * 16;
-
-        // note: would a Matrix3x3 be enough?
-
-        public int Type;
-        public Vector4 Data;
-        public Matrix4x4 Transform;
-        public int Operation;
-        public int Flip;
-
-        public override string ToString() =>
-            $"{(SDFPrimitiveType)Type}: Data = {Data}, Position = {Transform.ExtractTranslation()}";
     }
 
     #region Create Menu Items

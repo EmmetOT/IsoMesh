@@ -25,10 +25,6 @@ struct TriangleData
     int P_1;
     int P_2;
     int P_3;
-    
-    //uint P_1_IsNewVertex;
-    //uint P_2_IsNewVertex;
-    //uint P_3_IsNewVertex;
 };
 
 struct NewVertexData

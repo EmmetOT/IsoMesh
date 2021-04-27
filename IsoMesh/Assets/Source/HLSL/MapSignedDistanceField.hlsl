@@ -14,23 +14,31 @@
 #include "Common.hlsl"
 #include "./SDFFunctions.hlsl"
 
-struct PrimitiveGPUData
+// This struct represents a single SDF object, to be sent as an instruction to the GPU.
+struct SDFGPUData
 {
-    int Type;
-    float4 Data;
-    float4x4 Transform;
-    int Operation;
-    int Flip;
-};
-
-struct SDFMeshData
-{
-    int Size;
-    float3 MinBounds;
-    float3 MaxBounds;
-    int SampleStartIndex;
-    int UVStartIndex;
-    float4x4 Transform;
+    int Type; // -1 if mesh, else it's an enum value
+    float4 Data; // if primitive, this could be anything. if mesh, it's (size, sample start index, uv start index, 0)
+    float4x4 Transform; // translation/rotation/scale
+    int Operation; // how this sdf is combined with previous 
+    int Flip; // whether to multiply by -1, turns inside out
+    float3 MinBounds; // only used by sdfmesh, near bottom left
+    float3 MaxBounds; // only used by sdfmesh, far top right
+    
+    int Size()
+    {
+        return (int) Data.x;
+    }
+    
+    int SampleStartIndex()
+    {
+        return (int) Data.y;
+    }
+    
+    int UVStartIndex()
+    {
+        return (int) Data.z;
+    }
 };
 
 struct Settings
@@ -41,27 +49,17 @@ struct Settings
 
 StructuredBuffer<Settings> _Settings;
 
-StructuredBuffer<PrimitiveGPUData> _SDFPrimitives;
-int _SDFPrimitivesCount;
+StructuredBuffer<SDFGPUData> _SDFData;
+int _SDFDataCount;
 
 StructuredBuffer<float> _SDFMeshSamples;
 StructuredBuffer<float> _SDFMeshPackedUVs;
-StructuredBuffer<SDFMeshData> _SDFMeshes;
-int _SDFMeshCount;
-
-//float4x4 _GroupTransform;
-
-//#ifdef APPLY_GROUP_TRANSFORM
-//#define GROUP_TRANSFORM _GroupTransform
-//#else
-//#define GROUP_TRANSFORM IDENTITY_MATRIX
-//#endif
 
 float3 MapNormal(float3 p, float smoothing = -1.0);
 
-float3 CellCoordinateToVertex(int x, int y, int z, SDFMeshData data)
+float3 CellCoordinateToVertex(int x, int y, int z, SDFGPUData data)
 {
-    float gridSize = data.Size - 1.0;
+    float gridSize = data.Size() - 1.0;
     float3 minBounds = data.MinBounds;
     float3 maxBounds = data.MaxBounds;
     float xPos = lerp(minBounds.x, maxBounds.x, x / gridSize);
@@ -71,19 +69,19 @@ float3 CellCoordinateToVertex(int x, int y, int z, SDFMeshData data)
     return float3(xPos, yPos, zPos);
 }
 
-int CellCoordinateToIndex(int x, int y, int z, SDFMeshData data)
+int CellCoordinateToIndex(int x, int y, int z, SDFGPUData data)
 {
-    int size = data.Size;
-    return data.SampleStartIndex + (x + y * size + z * size * size);
+    int size = data.Size();
+    return data.SampleStartIndex() + (x + y * size + z * size * size);
 }
 
-float GetSignedDistance(int x, int y, int z, SDFMeshData data)
+float GetSignedDistance(int x, int y, int z, SDFGPUData data)
 {
     int index = CellCoordinateToIndex(x, y, z, data);
     return _SDFMeshSamples[index];
 }
 
-float2 GetUV(int x, int y, int z, SDFMeshData data)
+float2 GetUV(int x, int y, int z, SDFGPUData data)
 {
     int index = CellCoordinateToIndex(x, y, z, data);
     
@@ -95,7 +93,7 @@ float2 GetUV(int x, int y, int z, SDFMeshData data)
 // this is used to get the position on the bounding cube nearest the given point as 
 // part of the sdf to mesh calculation. the additional push param is used to ensure we have enough
 // samples around our point that we can get a gradient
-float3 GetClosestPointToVolume(float3 p, SDFMeshData data, float boundsOffset = 0)
+float3 GetClosestPointToVolume(float3 p, SDFGPUData data, float boundsOffset = 0)
 {
     float3 minBounds = data.MinBounds;
     float3 maxBounds = data.MaxBounds;
@@ -107,7 +105,7 @@ float3 GetClosestPointToVolume(float3 p, SDFMeshData data, float boundsOffset = 
 }
 
 // ensure the given point is inside the volume, and then smush into the the [0, 1] range
-float3 ClampAndNormalizeToVolume(float3 p, SDFMeshData data, float boundsOffset = 0)
+float3 ClampAndNormalizeToVolume(float3 p, SDFGPUData data, float boundsOffset = 0)
 {
     // clamp so we're inside the volume
     p = GetClosestPointToVolume(p, data, boundsOffset);
@@ -123,10 +121,10 @@ float3 ClampAndNormalizeToVolume(float3 p, SDFMeshData data, float boundsOffset 
 }
 
 // given a point, return the coords of the cell it's in, and the fractional component for interpolation
-void GetNearestCoordinates(float3 p, SDFMeshData data, out float3 coords, out float3 fracs, float boundsOffset = 0)
+void GetNearestCoordinates(float3 p, SDFGPUData data, out float3 coords, out float3 fracs, float boundsOffset = 0)
 {
     p = ClampAndNormalizeToVolume(p, data, boundsOffset);
-    int cellsPerSide = data.Size - 1;
+    int cellsPerSide = data.Size() - 1;
     
     // sometimes i'm not good at coming up with names :U
     float3 floored = floor(p * cellsPerSide);
@@ -135,7 +133,7 @@ void GetNearestCoordinates(float3 p, SDFMeshData data, out float3 coords, out fl
     fracs = frac(p * cellsPerSide);
 }
 
-float SampleAssetInterpolated(float3 p, SDFMeshData data, float boundsOffset = 0)
+float SampleAssetInterpolated(float3 p, SDFGPUData data, float boundsOffset = 0)
 {
     float3 coords;
     float3 fracs;
@@ -156,7 +154,6 @@ float SampleAssetInterpolated(float3 p, SDFMeshData data, float boundsOffset = 0
 
     return TrilinearInterpolate(fracs, sampleA, sampleB, sampleC, sampleD, sampleE, sampleF, sampleG, sampleH);
 }
-
 
 // this is trilinear interpolation with a twist: if the difference between two adjacent values exceed some threshold,
 // just use (the average? the min?)
@@ -187,7 +184,7 @@ float2 UVTrilinearInterpolate(float3 fracs, float2 a, float2 b, float2 c, float2
     return (abs(y2 - y1) > threshold) ? y1 : lerp(y1, y2, fracs.z);
 }
 
-float2 SampleUVInterpolated(float3 p, SDFMeshData data, float boundsOffset = 0)
+float2 SampleUVInterpolated(float3 p, SDFGPUData data, float boundsOffset = 0)
 {
     float3 coords;
     float3 fracs;
@@ -209,7 +206,7 @@ float2 SampleUVInterpolated(float3 p, SDFMeshData data, float boundsOffset = 0)
     return UVTrilinearInterpolate(fracs, uvA, uvB, uvC, uvD, uvE, uvF, uvG, uvH);
 }
 
-float3 ComputeGradient(float3 p, SDFMeshData data, float epsilon, float boundsOffset = 0)
+float3 ComputeGradient(float3 p, SDFGPUData data, float epsilon, float boundsOffset = 0)
 {
     // sample the map 4 times to calculate the gradient at that point, then normalize it
     const float2 e = float2(epsilon, -epsilon);
@@ -224,7 +221,7 @@ float3 ComputeGradient(float3 p, SDFMeshData data, float epsilon, float boundsOf
 // returns the vector pointing to the surface of the mesh representation, as well as the sign
 // (negative for inside, positive for outside)
 // this can be used to recreate a signed distance field
-float3 unsignedDirection_mesh(float3 p, SDFMeshData data, out float distSign, out float3 transformedP)
+float3 unsignedDirection_mesh(float3 p, SDFGPUData data, out float distSign, out float3 transformedP)
 {
     transformedP = mul(data.Transform, float4(p, 1.0)).xyz;
     
@@ -247,58 +244,68 @@ float3 unsignedDirection_mesh(float3 p, SDFMeshData data, out float distSign, ou
     return finalVec;
 }
 
-float sdf_mesh(float3 p, SDFMeshData data)
+float sdf(float3 p, SDFGPUData data)
 {
-    float distSign;
-    float3 transformedP;
-    float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
-
-    return length(vec) * distSign;
-}
-
-float2 sdf_mesh_uv(float3 p, SDFMeshData data, out float dist)
-{
-    float distSign;
-    float3 transformedP;
-    float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
-    
-    // push p to the nearest surface of the 'mesh'
-    p = transformedP + vec;
-    
-    dist = length(vec) * distSign;
-    
-    return SampleUVInterpolated(p, data);
-}
-
-float sdf_primitive(float3 p, PrimitiveGPUData data)
-{
-    p = mul(data.Transform, float4(p, 1.0)).xyz;
-    
-    switch (data.Type)
+    if (data.Type < 0)
     {
-        case PRIMITIVE_TYPE_SPHERE:
-            return sdf_sphere(p, data.Data.x) * data.Flip;
-        case PRIMITIVE_TYPE_TORUS:
-            return sdf_torus(p, data.Data.xy) * data.Flip;
-        case PRIMITIVE_TYPE_CUBOID:
-            return sdf_roundedBox(p, data.Data.xyz, data.Data.w) * data.Flip;
-        default:
-            return sdf_boxFrame(p, data.Data.xyz, data.Data.w) * data.Flip;
+        float distSign;
+        float3 transformedP;
+        float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
+
+        return length(vec) * distSign * data.Flip;;
+    }
+    else
+    {
+        p = mul(data.Transform, float4(p, 1.0)).xyz;
+    
+        switch (data.Type)
+        {
+            case PRIMITIVE_TYPE_SPHERE:
+                return sdf_sphere(p, data.Data.x) * data.Flip;
+            case PRIMITIVE_TYPE_TORUS:
+                return sdf_torus(p, data.Data.xy) * data.Flip;
+            case PRIMITIVE_TYPE_CUBOID:
+                return sdf_roundedBox(p, data.Data.xyz, data.Data.w) * data.Flip;
+            default:
+                return sdf_boxFrame(p, data.Data.xyz, data.Data.w) * data.Flip;
+        }
     }
 }
 
-float2 sdf_primitive_uv(float3 p, PrimitiveGPUData data)
+float2 sdf_uv(float3 p, SDFGPUData data, out float dist)
 {
-    p = mul(data.Transform, float4(p, 1.0)).xyz;
-    
-    switch (data.Type)
+    if (data.Type < 0)
     {
-        case PRIMITIVE_TYPE_SPHERE:
-            return sdf_uv_sphere(p, data.Data.x);
-        case PRIMITIVE_TYPE_TORUS:
-            return sdf_uv_sphere(p, data.Data.x);
-        default:
-            return sdf_uv_triplanar(p, data.Data.xyz, sdf_box_normal(p, data.Data.xyz));
+        float distSign;
+        float3 transformedP;
+        float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
+    
+        // push p to the nearest surface of the 'mesh'
+        p = transformedP + vec;
+    
+        dist = length(vec) * distSign * data.Flip;;
+    
+        return SampleUVInterpolated(p, data);
+    }
+    else
+    {
+        p = mul(data.Transform, float4(p, 1.0)).xyz;
+    
+        switch (data.Type)
+        {
+            case PRIMITIVE_TYPE_SPHERE:
+                dist = sdf_sphere(p, data.Data.x) * data.Flip;
+                return sdf_uv_sphere(p, data.Data.x);
+            case PRIMITIVE_TYPE_TORUS:
+                dist = sdf_torus(p, data.Data.xy) * data.Flip;
+                return sdf_uv_sphere(p, data.Data.x);
+            case PRIMITIVE_TYPE_CUBOID:
+                dist = sdf_roundedBox(p, data.Data.xyz, data.Data.w) * data.Flip;
+                return sdf_uv_triplanar(p, data.Data.xyz, sdf_box_normal(p, data.Data.xyz));
+            default:
+                dist = sdf_boxFrame(p, data.Data.xyz, data.Data.w) * data.Flip;
+                return sdf_uv_triplanar(p, data.Data.xyz, sdf_box_normal(p, data.Data.xyz));
+        }
     }
 }
 
@@ -308,17 +315,12 @@ float Map(float3 p)
     
     float smoothing = _Settings[0].Smoothing;
     
-    for (int i = 0; i < _SDFPrimitivesCount; i++)
+    for (int i = 0; i < _SDFDataCount; i++)
     {
-        if (_SDFPrimitives[i].Operation == 0)
-            minDist = sdf_op_smin(minDist, sdf_primitive(p, _SDFPrimitives[i]), smoothing);
+        if (_SDFData[i].Operation == 0)
+            minDist = sdf_op_smin(minDist, sdf(p, _SDFData[i]), smoothing);
         else
-            minDist = sdf_op_smoothSubtraction(sdf_primitive(p, _SDFPrimitives[i]), minDist, smoothing);
-    }
-    
-    for (int j = 0; j < _SDFMeshCount; j++)
-    {
-        minDist = sdf_op_smin(minDist, sdf_mesh(p, _SDFMeshes[j]), smoothing);
+            minDist = sdf_op_smoothSubtraction(sdf(p, _SDFData[i]), minDist, smoothing);
     }
     
     return minDist;
@@ -331,33 +333,17 @@ float2 MapUV(float3 p)
     
     float inverseDistanceSum = 0;
     
-    for (int i = 0; i < _SDFPrimitivesCount; i++)
+    for (int i = 0; i < _SDFDataCount; i++)
     {
-        inverseDistanceSum += (1.0 / clamp(sdf_primitive(p, _SDFPrimitives[i]), smallNumber, bigNumber));
-    }
-    
-    for (int j = 0; j < _SDFMeshCount; j++)
-    {
-        inverseDistanceSum += (1.0 / clamp(sdf_mesh(p, _SDFMeshes[j]), smallNumber, bigNumber));
+        inverseDistanceSum += (1.0 / clamp(sdf(p, _SDFData[i]), smallNumber, bigNumber));
     }
     
     float2 finalUV = float2(0, 0);
     
-    for (int k = 0; k < _SDFPrimitivesCount; k++)
-    {
-        float2 uv = sdf_primitive_uv(p, _SDFPrimitives[k]);
-        float dist = sdf_primitive(p, _SDFPrimitives[k]);
-        
-        float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
-        float weight = inverseDist / inverseDistanceSum;
-
-        finalUV += uv * weight;
-    }
-    
-    for (int l = 0; l < _SDFMeshCount; l++)
+    for (int j = 0; j < _SDFDataCount; j++)
     {
         float dist;
-        float2 uv = sdf_mesh_uv(p, _SDFMeshes[l], dist);
+        float2 uv = sdf_uv(p, _SDFData[j], dist);
         
         float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
         float weight = inverseDist / inverseDistanceSum;

@@ -38,13 +38,17 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         public static readonly int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
         public static readonly int Transform_Matrix4x4 = Shader.PropertyToID("_GroupTransform");
 
-        public static readonly int Primitives_StructuredBuffer = Shader.PropertyToID("_SDFPrimitives");
-        public static readonly int PrimitivesCount_Int = Shader.PropertyToID("_SDFPrimitivesCount");
+        //public static readonly int Primitives_StructuredBuffer = Shader.PropertyToID("_SDFPrimitives");
+        //public static readonly int PrimitivesCount_Int = Shader.PropertyToID("_SDFPrimitivesCount");
 
-        public static readonly int Meshes_StructuredBuffer = Shader.PropertyToID("_SDFMeshes");
+        //public static readonly int Meshes_StructuredBuffer = Shader.PropertyToID("_SDFMeshes");
+        //public static readonly int MeshCount_Int = Shader.PropertyToID("_SDFMeshCount");
+
+        public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
+        public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
+
         public static readonly int MeshSamples_StructuredBuffer = Shader.PropertyToID("_SDFMeshSamples");
         public static readonly int MeshPackedUVs_StructuredBuffer = Shader.PropertyToID("_SDFMeshPackedUVs");
-        public static readonly int MeshCount_Int = Shader.PropertyToID("_SDFMeshCount");
 
         public static readonly int Samples_RWBuffer = Shader.PropertyToID("_Samples");
         public static readonly int VertexData_AppendBuffer = Shader.PropertyToID("_VertexDataPoints");
@@ -1054,7 +1058,37 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     #region SDF Group Methods
 
-    public void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count)
+    //public void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count)
+    //{
+    //    if (!m_isEnabled)
+    //        return;
+
+    //    if (!m_initialized)
+    //        InitializeComputeShaderSettings();
+
+    //    UpdateMapKernels(Properties.Primitives_StructuredBuffer, computeBuffer);
+    //    m_computeShaderInstance.SetInt(Properties.PrimitivesCount_Int, count);
+
+    //    if (m_autoUpdate)
+    //        UpdateMesh();
+    //}
+
+    //public void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count)
+    //{
+    //    if (!m_isEnabled)
+    //        return;
+
+    //    if (!m_initialized)
+    //        InitializeComputeShaderSettings();
+
+    //    UpdateMapKernels(Properties.Meshes_StructuredBuffer, computeBuffer);
+    //    m_computeShaderInstance.SetInt(Properties.MeshCount_Int, count);
+
+    //    if (m_autoUpdate)
+    //        UpdateMesh();
+    //}
+
+    public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
     {
         if (!m_isEnabled)
             return;
@@ -1062,14 +1096,14 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         if (!m_initialized)
             InitializeComputeShaderSettings();
 
-        UpdateMapKernels(Properties.Primitives_StructuredBuffer, computeBuffer);
-        m_computeShaderInstance.SetInt(Properties.PrimitivesCount_Int, count);
+        UpdateMapKernels(Properties.SDFData_StructuredBuffer, computeBuffer);
+        m_computeShaderInstance.SetInt(Properties.SDFDataCount_Int, count);
 
         if (m_autoUpdate)
             UpdateMesh();
     }
 
-    public void UpdateMeshSamplesBuffer(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
+    public void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
     {
         if (!m_isEnabled)
             return;
@@ -1079,21 +1113,6 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
         UpdateMapKernels(Properties.MeshSamples_StructuredBuffer, samplesBuffer);
         UpdateMapKernels(Properties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
-
-        if (m_autoUpdate)
-            UpdateMesh();
-    }
-
-    public void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count)
-    {
-        if (!m_isEnabled)
-            return;
-
-        if (!m_initialized)
-            InitializeComputeShaderSettings();
-
-        UpdateMapKernels(Properties.Meshes_StructuredBuffer, computeBuffer);
-        m_computeShaderInstance.SetInt(Properties.MeshCount_Int, count);
 
         if (m_autoUpdate)
             UpdateMesh();

@@ -15,20 +15,18 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
 
     private static class MaterialProperties
     {
-        public static int Settings_StructuredBuffer => Shader.PropertyToID("_Settings");
+        public static int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
 
-        public static int Primitives_StructuredBuffer => Shader.PropertyToID("_SDFPrimitives");
-        public static int PrimitivesCount_Int => Shader.PropertyToID("_SDFPrimitivesCount");
+        public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
+        public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
-        public static int Meshes_StructuredBuffer => Shader.PropertyToID("_SDFMeshes");
-        public static int MeshSamples_StructuredBuffer => Shader.PropertyToID("_SDFMeshSamples");
-        public static int MeshPackedUVs_StructuredBuffer => Shader.PropertyToID("_SDFMeshPackedUVs");
-        public static int MeshCount_Int => Shader.PropertyToID("_SDFMeshCount");
+        public static int MeshSamples_StructuredBuffer = Shader.PropertyToID("_SDFMeshSamples");
+        public static int MeshPackedUVs_StructuredBuffer = Shader.PropertyToID("_SDFMeshPackedUVs");
 
-        public static int Diffuse_Colour => Shader.PropertyToID("_DiffuseColour");
-        public static int Ambient_Colour => Shader.PropertyToID("_AmbientColour");
-        public static int GlossPower_Float => Shader.PropertyToID("_GlossPower");
-        public static int GlossMultiplier_Float => Shader.PropertyToID("_GlossMultiplier");
+        public static int Diffuse_Colour = Shader.PropertyToID("_DiffuseColour");
+        public static int Ambient_Colour = Shader.PropertyToID("_AmbientColour");
+        public static int GlossPower_Float = Shader.PropertyToID("_GlossPower");
+        public static int GlossMultiplier_Float = Shader.PropertyToID("_GlossMultiplier");
     }
 
     [SerializeField]
@@ -158,39 +156,27 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }
 
-    public void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count)
+
+    public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
     {
         if (m_propertyBlock == null)
             m_propertyBlock = new MaterialPropertyBlock();
 
         if (computeBuffer != null && computeBuffer.IsValid())
-            m_propertyBlock.SetBuffer(MaterialProperties.Primitives_StructuredBuffer, computeBuffer);
+            m_propertyBlock.SetBuffer(MaterialProperties.SDFData_StructuredBuffer, computeBuffer);
 
-        m_propertyBlock.SetInt(MaterialProperties.PrimitivesCount_Int, count);
+        m_propertyBlock.SetInt(MaterialProperties.SDFDataCount_Int, count);
 
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }
-
-    public void UpdateMeshSamplesBuffer(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
+    
+    public void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
     {
         if (m_propertyBlock == null)
             m_propertyBlock = new MaterialPropertyBlock();
 
         m_propertyBlock.SetBuffer(MaterialProperties.MeshSamples_StructuredBuffer, samplesBuffer);
         m_propertyBlock.SetBuffer(MaterialProperties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
-
-        m_renderer.SetPropertyBlock(m_propertyBlock);
-    }
-
-    public void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count)
-    {
-        if (m_propertyBlock == null)
-            m_propertyBlock = new MaterialPropertyBlock();
-
-        if (computeBuffer != null && computeBuffer.IsValid())
-            m_propertyBlock.SetBuffer(MaterialProperties.Meshes_StructuredBuffer, computeBuffer);
-
-        m_propertyBlock.SetInt(MaterialProperties.MeshCount_Int, count);
 
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }

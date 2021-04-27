@@ -42,36 +42,21 @@ public class SDFMesh : SDFObject
         if (Group && !Group.IsRegistered(this) && m_asset)
             TryRegister();
     }
-
-    public GPUData GetGPUData(int sampleStartIndex, int uvStartIndex = -1)
+    
+    public override SDFGPUData GetSDFGPUData(int sampleStartIndex, int uvStartIndex = -1)
     {
-        return new GPUData
+        return new SDFGPUData
         {
-            Size = m_asset.Size,
+            Type = -1,
+            Data = new Vector4(m_asset.Size, sampleStartIndex, uvStartIndex),
+            Transform = transform.worldToLocalMatrix,
+            Operation = (int)m_operation,
+            Flip = m_flip ? -1 : 1,
             MinBounds = m_asset.MinBounds,
-            MaxBounds = m_asset.MaxBounds,
-            SampleStartIndex = sampleStartIndex,
-            Transform = transform.worldToLocalMatrix
+            MaxBounds = m_asset.MaxBounds
         };
     }
     
-    [StructLayout(LayoutKind.Sequential)]
-    [System.Serializable]
-    public struct GPUData
-    {
-        public static int Stride => sizeof(int) * 3 + sizeof(float) * 6 + sizeof(float) * 16;
-
-        public int Size;
-        public Vector3 MinBounds;
-        public Vector3 MaxBounds;
-        public int SampleStartIndex;
-        public int UVStartIndex;
-        public Matrix4x4 Transform;
-
-        public override string ToString()
-            => $"Size = {Size}, MinBounds = {MinBounds}, MaxBounds = {MaxBounds}, StartIndex = {SampleStartIndex}";
-    }
-
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
