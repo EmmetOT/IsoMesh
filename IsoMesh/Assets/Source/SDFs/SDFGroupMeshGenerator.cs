@@ -355,7 +355,14 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     [SerializeField]
     private bool m_showGrid = false;
     public bool ShowGrid => m_showGrid;
-    
+
+    [SerializeField]
+    [HideInInspector]
+    // this bool is toggled off/on whenever the Unity callbacks OnEnable/OnDisable are called.
+    // note that this doesn't always give the same result as "enabled" because OnEnable/OnDisable are
+    // called during recompiles etc. you can basically read this bool as "is recompiling"
+    private bool m_isEnabled = false;
+
     #endregion
 
     #region MonoBehaviour Callbacks
@@ -368,6 +375,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     private void OnEnable()
     {
+        m_isEnabled = true;
         m_initialized = false;
         if (Group.IsReady)
         {
@@ -376,7 +384,11 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         }
     }
 
-    private void OnDisable() => ReleaseBuffers();
+    private void OnDisable()
+    {
+        m_isEnabled = false;
+        ReleaseBuffers();
+    }
 
     #endregion
 
@@ -462,7 +474,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     /// </summary>
     private void InitializeComputeShaderSettings()
     {
-        if (m_initialized)
+        if (m_initialized || !m_isEnabled)
             return;
 
         ReleaseBuffers();
@@ -479,7 +491,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         ResendKeywords();
 
         m_kernels = new Kernels(ComputeShader);
-
+        
         // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
         m_counterBuffer = new ComputeBuffer(m_counterArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
         m_proceduralArgsBuffer = new ComputeBuffer(m_proceduralArgsArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
@@ -541,7 +553,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         m_triangleDataBuffer = new ComputeBuffer(countCubed, TriangleData.Stride, ComputeBufferType.Append);
 
         m_meshVerticesBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
-        m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
+        m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);//
         m_meshTrianglesBuffer = new ComputeBuffer(countCubed * 3, sizeof(int), ComputeBufferType.Structured);
         m_meshUVsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 2, ComputeBufferType.Structured);
 
@@ -593,7 +605,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_counterBuffer?.Dispose();
         m_proceduralArgsBuffer?.Dispose();
-
+        
         m_samplesBuffer?.Dispose();
         m_cellDataBuffer?.Dispose();
         m_vertexDataBuffer?.Dispose();
@@ -617,7 +629,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     /// </summary>
     private void UpdateMapKernels(int id, ComputeBuffer buffer)
     {
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         if (buffer == null || !buffer.IsValid())
@@ -783,7 +795,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     private void SetTransform(Matrix4x4 trans)
     {
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, trans);
@@ -794,7 +806,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_cellCount = cellCount;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         CreateVariableBuffers();
@@ -813,7 +825,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_cellSize = cellSize;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.CellSize_Float, CellSize);
@@ -831,7 +843,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_constrainToCellUnits = units;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.ConstrainToCellUnits_Float, m_constrainToCellUnits);
@@ -844,7 +856,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_visualNormalSmoothing = visualNormalSmoothing;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.VisualNormalSmoothing, m_visualNormalSmoothing);
@@ -857,7 +869,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_maxAngleTolerance = maxAngleTolerance;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.MaxAngleCosine_Float, Mathf.Cos(m_maxAngleTolerance * Mathf.Deg2Rad));
@@ -870,7 +882,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_gradientDescentIterations = gradientDescentIterations;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetInt(Properties.GradientDescentIterations_Int, m_gradientDescentIterations);
@@ -883,7 +895,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         m_binarySearchIterations = iterations;
 
-        if (!m_initialized)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetInt(Properties.BinarySearchIterations_Int, m_binarySearchIterations);
@@ -894,7 +906,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void SetIsosurfaceExtractionType(IsosurfaceExtractionType isosurfaceExtractionType)
     {
-        if (!m_computeShaderInstance)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_isosurfaceExtractionType = isosurfaceExtractionType;
@@ -916,7 +928,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void SetEdgeIntersectionType(EdgeIntersectionType edgeIntersectionType)
     {
-        if (!m_computeShaderInstance)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_edgeIntersectionType = edgeIntersectionType;
@@ -947,7 +959,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     private void OnNudgeSettingsChanged()
     {
-        if (!m_computeShaderInstance)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.NudgeVerticesToAverageNormalScalar_Float, m_nudgeVerticesToAverageNormalScalar);
@@ -959,7 +971,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void SetApplyGradientDescent(bool applyGradientDescent)
     {
-        if (!m_computeShaderInstance)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_applyGradientDescent = applyGradientDescent;
@@ -993,7 +1005,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     private void OnQEFSettingsOverrideSet()
     {
-        if (!m_computeShaderInstance)
+        if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.QEFPseudoInverseThreshold_Float, m_qefPseudoInverseThreshold);
@@ -1044,6 +1056,9 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count)
     {
+        if (!m_isEnabled)
+            return;
+
         if (!m_initialized)
             InitializeComputeShaderSettings();
 
@@ -1056,6 +1071,9 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void UpdateMeshSamplesBuffer(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
     {
+        if (!m_isEnabled)
+            return;
+
         if (!m_initialized)
             InitializeComputeShaderSettings();
 
@@ -1068,6 +1086,9 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count)
     {
+        if (!m_isEnabled)
+            return;
+
         if (!m_initialized)
             InitializeComputeShaderSettings();
 
@@ -1080,6 +1101,9 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
     public void UpdateSettingsBuffer(ComputeBuffer computeBuffer)
     {
+        if (!m_isEnabled)
+            return;
+
         if (!m_initialized)
             InitializeComputeShaderSettings();
 
