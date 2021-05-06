@@ -64,7 +64,6 @@ public class SDFGroupMeshGeneratorEditor : Editor
         public SerializedProperty NudgeVerticesToAverageNormalScalar { get; }
         public SerializedProperty NudgeMaxMagnitude { get; }
         public SerializedProperty ShowGrid { get; }
-        //public SerializedProperty ShowSamplePoints { get; }
 
         public SerializedProperties(SerializedObject serializedObject)
         {
@@ -92,7 +91,6 @@ public class SDFGroupMeshGeneratorEditor : Editor
             NudgeVerticesToAverageNormalScalar = serializedObject.FindProperty("m_nudgeVerticesToAverageNormalScalar");
             NudgeMaxMagnitude = serializedObject.FindProperty("m_nudgeMaxMagnitude");
             ShowGrid = serializedObject.FindProperty("m_showGrid");
-            //ShowSamplePoints = serializedObject.FindProperty("m_showSamplePoints");
         }
     }
 
@@ -100,6 +98,7 @@ public class SDFGroupMeshGeneratorEditor : Editor
     private SDFGroupMeshGenerator m_sdfGroupMeshGen;
 
     private SerializedProperties m_serializedProperties;
+    private SerializedPropertySetter m_setter;
     private bool m_isVoxelSettingsOpen = true;
     private bool m_isAlgorithmSettingsOpen = true;
     private bool m_isDebugSettingsOpen = true;
@@ -108,11 +107,13 @@ public class SDFGroupMeshGeneratorEditor : Editor
     {
         m_sdfGroupMeshGen = target as SDFGroupMeshGenerator;
         m_serializedProperties = new SerializedProperties(serializedObject);
+        m_setter = new SerializedPropertySetter(serializedObject);
     }
-
-
+    
     public override void OnInspectorGUI()
     {
+        m_setter.Clear();
+
         serializedObject.DrawScript();
 
         GUI.enabled = false;
@@ -123,52 +124,30 @@ public class SDFGroupMeshGeneratorEditor : Editor
         EditorGUILayout.PropertyField(m_serializedProperties.SDFGroup, Labels.SDFGroup);
         GUI.enabled = true;
 
-        EditorGUILayout.PropertyField(m_serializedProperties.AutoUpdate, Labels.AutoUpdate);
-
-        if (this.DrawEnumField(Labels.OutputMode, m_sdfGroupMeshGen.OutputMode, out OutputMode newOutputMode))
-        {
-            m_sdfGroupMeshGen.SetOutputMode(newOutputMode);
-            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-        }
-
+        m_setter.DrawProperty(Labels.AutoUpdate, m_serializedProperties.AutoUpdate);
+        
+        m_setter.DrawEnumSetting<OutputMode>(Labels.OutputMode, m_serializedProperties.OutputMode, onValueChangedCallback: m_sdfGroupMeshGen.OnOutputModeChanged);
+        
         if (m_sdfGroupMeshGen.OutputMode == OutputMode.Procedural)
-            EditorGUILayout.PropertyField(m_serializedProperties.ProceduralMaterial, Labels.ProceduralMaterial);
-
+            m_setter.DrawProperty(Labels.ProceduralMaterial, m_serializedProperties.ProceduralMaterial);
+        
         if (m_isVoxelSettingsOpen = EditorGUILayout.Foldout(m_isVoxelSettingsOpen, Labels.VoxelSettings, true))
         {
             using (EditorGUILayout.VerticalScope box = new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.PropertyField(m_serializedProperties.CellSizeMode, Labels.CellSizeMode);
-
+                    m_setter.DrawProperty(Labels.CellSizeMode, m_serializedProperties.CellSizeMode);
+                    
                     if (m_sdfGroupMeshGen.CellSizeMode == CellSizeMode.Fixed)
                     {
-                        if (this.DrawFloatField(Labels.CellSize, m_sdfGroupMeshGen.CellSize, out float newCellSize, min: 0.005f))
-                        {
-                            m_sdfGroupMeshGen.SetCellSize(newCellSize);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-
-                        if (this.DrawIntField(Labels.CellCount, m_sdfGroupMeshGen.CellCount, out int newCellCount, min: 2, max: 200))
-                        {
-                            m_sdfGroupMeshGen.SetCellCount(newCellCount);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
+                        m_setter.DrawFloatSetting(Labels.CellSize, m_serializedProperties.CellSize, min: 0.005f, onValueChangedCallback: m_sdfGroupMeshGen.OnCellSizeChanged);
+                        m_setter.DrawIntSetting(Labels.CellCount, m_serializedProperties.CellCount, min: 2, max: 200, onValueChangedCallback: m_sdfGroupMeshGen.OnCellCountChanged);
                     }
                     else if (m_sdfGroupMeshGen.CellSizeMode == CellSizeMode.Density)
                     {
-                        if (this.DrawFloatField(Labels.VolumeSize, m_sdfGroupMeshGen.VolumeSize, out float newVolumeSize, min: 0.05f))
-                        {
-                            m_sdfGroupMeshGen.SetDensity(newVolumeSize, m_sdfGroupMeshGen.CellDensity);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-
-                        if (this.DrawFloatField(Labels.CellDensity, m_sdfGroupMeshGen.CellDensity, out float newCellDensity, min: 0.05f))
-                        {
-                            m_sdfGroupMeshGen.SetDensity(m_sdfGroupMeshGen.VolumeSize, newCellDensity);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
+                        m_setter.DrawFloatSetting(Labels.VolumeSize, m_serializedProperties.VolumeSize, min: 0.05f, onValueChangedCallback: m_sdfGroupMeshGen.OnDensitySettingChanged);
+                        m_setter.DrawFloatSetting(Labels.CellDensity, m_serializedProperties.CellDensity, min: 0.05f, onValueChangedCallback: m_sdfGroupMeshGen.OnDensitySettingChanged);
                     }
                 }
             }
@@ -180,136 +159,68 @@ public class SDFGroupMeshGeneratorEditor : Editor
             {
                 using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                 {
-                    if (this.DrawEnumField(Labels.IsosurfaceExtractionType, m_sdfGroupMeshGen.IsosurfaceExtractionType, out IsosurfaceExtractionType newIsosurfaceExtractionType))
-                    {
-                        m_sdfGroupMeshGen.SetIsosurfaceExtractionType(newIsosurfaceExtractionType);
-                        EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                    }
+                    m_setter.DrawEnumSetting<IsosurfaceExtractionType>(Labels.IsosurfaceExtractionType, m_serializedProperties.IsosurfaceExtractionType, onValueChangedCallback: m_sdfGroupMeshGen.OnIsosurfaceExtractionTypeChanged);
 
                     if (m_sdfGroupMeshGen.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
-                    {
-                        if (this.DrawFloatField(Labels.ConstrainToCellUnits, m_sdfGroupMeshGen.ConstrainToCellUnits, out float newConstrainToCellUnits, min: 0f))
-                        {
-                            m_sdfGroupMeshGen.SetConstrainToCellUnits(newConstrainToCellUnits);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-                    }
+                        m_setter.DrawFloatSetting(Labels.ConstrainToCellUnits, m_serializedProperties.ConstrainToCellUnits, min: 0f, onValueChangedCallback: m_sdfGroupMeshGen.OnConstrainToCellUnitsChanged);
 
                     EditorGUILayout.Space();
                     EditorGUILayout.LabelField("Normal Settings", EditorStyles.boldLabel);
 
-                    if (this.DrawFloatField(Labels.MaxAngleTolerance, m_sdfGroupMeshGen.MaxAngleTolerance, out float newMaxAngleTolerance, min: 0f, max: 180f))
-                    {
-                        m_sdfGroupMeshGen.SetMaxAngleTolerance(newMaxAngleTolerance);
-                        EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                    }
-
-                    if (this.DrawFloatField(Labels.VisualNormalSmoothing, m_sdfGroupMeshGen.VisualNormalSmoothing, out float newVisualNormalSmoothing, min: 1e-5f, max: 10f))
-                    {
-                        m_sdfGroupMeshGen.SetVisualNormalSmoothing(newVisualNormalSmoothing);
-                        EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                    }
-
+                    m_setter.DrawFloatSetting(Labels.MaxAngleTolerance, m_serializedProperties.MaxAngleTolerance, min: 0f, max: 180f, onValueChangedCallback: m_sdfGroupMeshGen.OnMaxAngleToleranceChanged);
+                    m_setter.DrawFloatSetting(Labels.VisualNormalSmoothing, m_serializedProperties.VisualNormalSmoothing, min: 1e-5f, max: 10f, onValueChangedCallback: m_sdfGroupMeshGen.OnVisualNormalSmoothingChanged);
+                    
                     if (m_sdfGroupMeshGen.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
                     {
                         EditorGUILayout.Space();
                         EditorGUILayout.LabelField("QEF Settings", EditorStyles.boldLabel);
 
-                        if (this.DrawBoolField(Labels.OverrideQEFSettings, m_sdfGroupMeshGen.OverrideQEFSettings, out bool newOverideQEFSettings))
-                        {
-                            if (newOverideQEFSettings)
-                                m_sdfGroupMeshGen.SetQefOverrideSettings(m_sdfGroupMeshGen.QefSweeps, m_sdfGroupMeshGen.QefPseudoInverseThreshold);
-                            else
-                                m_sdfGroupMeshGen.DisableQEFOverride();
-
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-
+                        m_setter.DrawBoolSetting(Labels.OverrideQEFSettings, m_serializedProperties.OverrideQEFSettings, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
+                        
                         if (m_sdfGroupMeshGen.OverrideQEFSettings)
                         {
-                            if (this.DrawIntField(Labels.QEFSweeps, m_sdfGroupMeshGen.QefSweeps, out int newQEFSweeps, min: 1))
-                            {
-                                m_sdfGroupMeshGen.SetQefOverrideSettings(newQEFSweeps, m_sdfGroupMeshGen.QefPseudoInverseThreshold);
-                                EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                            }
-
-                            if (this.DrawFloatField(Labels.QEFPseudoInverseThreshold, m_sdfGroupMeshGen.QefPseudoInverseThreshold, out float newQEFPseudoInverseThreshold, min: 1e-9f))
-                            {
-                                m_sdfGroupMeshGen.SetQefOverrideSettings(m_sdfGroupMeshGen.QefSweeps, newQEFPseudoInverseThreshold);
-                                EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                            }
+                            m_setter.DrawIntSetting(Labels.QEFSweeps, m_serializedProperties.QEFSweeps, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
+                            m_setter.DrawFloatSetting(Labels.QEFPseudoInverseThreshold, m_serializedProperties.QEFPseudoInverseThreshold, min: 1e-7f, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
                         }
 
                         EditorGUILayout.Space();
                         EditorGUILayout.LabelField("Nudge Settings", EditorStyles.boldLabel);
 
-                        if (this.DrawFloatField(Labels.NudgeVerticesToAverageNormalScalar, m_sdfGroupMeshGen.NudgeVerticesToAverageNormalScalar, out float newNudgeVerticesToAverageNormalScalar, min: 0f))
-                        {
-                            m_sdfGroupMeshGen.SetNudgeSettings(newNudgeVerticesToAverageNormalScalar, m_sdfGroupMeshGen.NudgeMaxMagnitude);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-
-                        if (this.DrawFloatField(Labels.NudgeMaxMagnitude, m_sdfGroupMeshGen.NudgeMaxMagnitude, out float newNudgeMaxMagnitude, min: 0f))
-                        {
-                            m_sdfGroupMeshGen.SetNudgeSettings(m_sdfGroupMeshGen.NudgeVerticesToAverageNormalScalar, newNudgeMaxMagnitude);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
+                        m_setter.DrawFloatSetting(Labels.NudgeVerticesToAverageNormalScalar, m_serializedProperties.NudgeVerticesToAverageNormalScalar, min: 0f, onValueChangedCallback: m_sdfGroupMeshGen.OnNudgeSettingsChanged);
+                        m_setter.DrawFloatSetting(Labels.NudgeMaxMagnitude, m_serializedProperties.NudgeMaxMagnitude, min: 0f, onValueChangedCallback: m_sdfGroupMeshGen.OnNudgeSettingsChanged);
                     }
-
-
+                    
                     EditorGUILayout.Space();
                     EditorGUILayout.LabelField("Edge Intersection Settings", EditorStyles.boldLabel);
 
-                    if (this.DrawEnumField(Labels.EdgeIntersectionType, m_sdfGroupMeshGen.EdgeIntersectionType, out EdgeIntersectionType newEdgeIntersectionType))
-                    {
-                        m_sdfGroupMeshGen.SetEdgeIntersectionType(newEdgeIntersectionType);
-                        EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                    }
-
+                    m_setter.DrawEnumSetting<EdgeIntersectionType>(Labels.EdgeIntersectionType, m_serializedProperties.EdgeIntersectionType, onValueChangedCallback: m_sdfGroupMeshGen.OnEdgeIntersectionTypeChanged);
+                    
                     if (m_sdfGroupMeshGen.EdgeIntersectionType == EdgeIntersectionType.BinarySearch)
-                    {
-                        if (this.DrawIntField(Labels.BinarySearchIterations, m_sdfGroupMeshGen.BinarySearchIterations, out int newBinarySearchIterations, min: 1))
-                        {
-                            m_sdfGroupMeshGen.SetBinarySearchIterations(newBinarySearchIterations);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-                    }
-
+                        m_setter.DrawIntSetting(Labels.BinarySearchIterations, m_serializedProperties.BinarySearchIterations, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnBinarySearchIterationsChanged);
+                    
                     EditorGUILayout.Space();
                     EditorGUILayout.LabelField("Gradient Descent Settings", EditorStyles.boldLabel);
 
-                    if (this.DrawBoolField(Labels.ApplyGradientDescent, m_sdfGroupMeshGen.ApplyGradientDescent, out bool newApplyGradientDescent))
-                    {
-                        m_sdfGroupMeshGen.SetApplyGradientDescent(newApplyGradientDescent);
-                        EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                    }
-
+                    m_setter.DrawBoolSetting(Labels.ApplyGradientDescent, m_serializedProperties.ApplyGradientDescent, onValueChangedCallback: m_sdfGroupMeshGen.OnApplyGradientDescentChanged);
+                    
                     if (m_sdfGroupMeshGen.ApplyGradientDescent)
-                    {
-                        if (this.DrawIntField(Labels.GradientDescentIterations, m_sdfGroupMeshGen.GradientDescentIterations, out int newGradientDescentIterations, min: 1))
-                        {
-                            m_sdfGroupMeshGen.SetGradientDescentIterations(newGradientDescentIterations);
-                            EditorUtility.SetDirty(m_sdfGroupMeshGen);
-                        }
-                    }
+                        m_setter.DrawIntSetting(Labels.GradientDescentIterations, m_serializedProperties.GradientDescentIterations, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnGradientDescentIterationsChanged);
                 }
             }
         }
-
-
+        
         if (m_isDebugSettingsOpen = EditorGUILayout.Foldout(m_isDebugSettingsOpen, Labels.DebugSettings, true))
         {
             using (EditorGUILayout.VerticalScope box = new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.PropertyField(m_serializedProperties.ShowGrid, Labels.ShowGrid);
-                    //EditorGUILayout.PropertyField(m_serializedProperties.ShowSamplePoints, Labels.ShowSamplePoints);
+                    m_setter.DrawProperty(Labels.ShowGrid, m_serializedProperties.ShowGrid);
                 }
             }
         }
 
-        serializedObject.ApplyModifiedProperties();
+        m_setter.Update();
     }
 
     private void OnSceneGUI()

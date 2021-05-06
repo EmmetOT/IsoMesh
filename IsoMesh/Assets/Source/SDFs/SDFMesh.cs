@@ -15,6 +15,13 @@ public class SDFMesh : SDFObject
     private SDFMeshAsset m_asset;
     public SDFMeshAsset Asset => m_asset;
 
+    [SerializeField]
+    [UnityEngine.Serialization.FormerlySerializedAs("m_operation")]
+    protected SDFCombineType m_combineType;
+
+    [SerializeField]
+    protected bool m_flip = false;
+
     protected override void TryRegister()
     {
         if (!m_asset)
@@ -47,10 +54,10 @@ public class SDFMesh : SDFObject
     {
         return new SDFGPUData
         {
-            Type = -1,
+            Type = 0,
             Data = new Vector4(m_asset.Size, sampleStartIndex, uvStartIndex),
             Transform = transform.worldToLocalMatrix,
-            Operation = (int)m_operation,
+            CombineType = (int)m_combineType,
             Flip = m_flip ? -1 : 1,
             MinBounds = m_asset.MinBounds,
             MaxBounds = m_asset.MaxBounds
@@ -63,10 +70,10 @@ public class SDFMesh : SDFObject
         if (!m_asset)
             return;
 
-        UnityEditor.Handles.color = Color.white;
-        UnityEditor.Handles.matrix = transform.localToWorldMatrix;
-        UnityEditor.Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
-        UnityEditor.Handles.DrawWireCube(Vector3.zero, (m_asset.MaxBounds - m_asset.MinBounds));
+        Handles.color = Color.white;
+        Handles.matrix = transform.localToWorldMatrix;
+        Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
+        Handles.DrawWireCube((m_asset.MaxBounds + m_asset.MinBounds) * 0.5f, (m_asset.MaxBounds - m_asset.MinBounds));
     }
 #endif
 

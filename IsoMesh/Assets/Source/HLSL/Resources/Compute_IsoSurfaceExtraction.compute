@@ -158,6 +158,7 @@ bool GetEdgeSurfaceIntersection(int index_from, int index_to, out float3 interse
         outside = from;
     }
     
+    [fastopt]
     for (int i = 0; i < _BinarySearchIterations; i++)
     {
         float3 midpoint = (inside + outside) * 0.5f;
@@ -274,6 +275,7 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     // if the vertex is valid (not out of bounds) and its sign is different from the first vertex,
     // then this voxel contains surface
     // (note: i added vertex 'a' to the array, but i don't want to check it here because i checked it above while declaring 'isNegative', so i start at 1)
+    [fastopt]
     for (int i = 1; i < 8; i++)
     {
         isOnSurface = isOnSurface || (sign_A != sign(_Samples[vertices[i]]));
@@ -306,6 +308,7 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     float3 edgeIntersectionPoint;
     
     // iterate over each edge
+    [fastopt]
     for (int j = 0; j < 24; j += 2)
     {
         if (GetEdgeSurfaceIntersection(vertices[edges[j]], vertices[edges[j + 1]], edgeIntersectionPoint))
@@ -324,7 +327,7 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     }
     
     float3 massPoint = sumVertex / edgeCount;
-
+    
 #ifdef ISOSURFACETYPE_DUAL_CONTOURING
     float outOfBoundsTolerance = _ConstrainToCellUnits * _CellSize;
     
@@ -353,9 +356,12 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     
     float3 nudgeDir = sumNormal * _NudgeVerticesToAverageNormalScalar * dotWithMassPoint;
     float nudgeDirMag = min(length(nudgeDir), _NudgeMaxMagnitude);
+    
+    // clamp magnitude. ternary operator prevents div by zero
     nudgeDir = nudgeDirMag <= 0 ? nudgeDir : (normalize(nudgeDir) * nudgeDirMag);
     
     surfacePoint += nudgeDir;
+    
 #else
     surfacePoint = massPoint;
 #endif
@@ -366,8 +372,8 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
         surfacePoint -= (MapNormal(surfacePoint, -1.0) * Map(surfacePoint));
     }
 #endif    
-
-    normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
+    
+        normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
     
     return true;
 }

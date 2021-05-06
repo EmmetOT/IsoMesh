@@ -152,11 +152,10 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
             m_propertyBlock = new MaterialPropertyBlock();
 
         m_propertyBlock.SetBuffer(MaterialProperties.Settings_StructuredBuffer, computeBuffer);
-
+        
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }
-
-
+    
     public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
     {
         if (m_propertyBlock == null)
@@ -164,7 +163,7 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
 
         if (computeBuffer != null && computeBuffer.IsValid())
             m_propertyBlock.SetBuffer(MaterialProperties.SDFData_StructuredBuffer, computeBuffer);
-
+        
         m_propertyBlock.SetInt(MaterialProperties.SDFDataCount_Int, count);
 
         m_renderer.SetPropertyBlock(m_propertyBlock);
@@ -174,7 +173,7 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
     {
         if (m_propertyBlock == null)
             m_propertyBlock = new MaterialPropertyBlock();
-
+        
         m_propertyBlock.SetBuffer(MaterialProperties.MeshSamples_StructuredBuffer, samplesBuffer);
         m_propertyBlock.SetBuffer(MaterialProperties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
 
@@ -191,7 +190,7 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
 
     #region Helper Methods
 
-    private void OnVisualsChanged()
+    public void OnVisualsChanged()
     {
         if (m_propertyBlock == null)
             m_propertyBlock = new MaterialPropertyBlock();
@@ -204,7 +203,7 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }
 
-    private void UpdateCubeMesh()
+    public void UpdateCubeMesh()
     {
         Vector3 size = m_size * 0.5f;
 

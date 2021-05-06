@@ -21,14 +21,6 @@ public abstract class SDFObject : MonoBehaviour
         }
     }
 
-    [SerializeField]
-    protected SDFOp m_operation;
-    public SDFOp Operation => m_operation;
-
-    [SerializeField]
-    protected bool m_flip = false;
-    public bool Flip => m_flip;
-
     protected bool m_isDirty = false;
     
     private int m_lastSeenSiblingIndex = -1;
@@ -87,7 +79,7 @@ public abstract class SDFObject : MonoBehaviour
 }
 
 
-public enum SDFOp
+public enum SDFCombineType
 {
     SmoothMin, SmoothSubtract
 }

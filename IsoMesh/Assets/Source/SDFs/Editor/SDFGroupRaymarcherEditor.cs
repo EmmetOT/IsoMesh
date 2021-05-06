@@ -44,15 +44,18 @@ public class SDFGroupRaymarcherEditor : Editor
 
     private SerializedProperties m_serializedProperties;
     private bool m_isVisualSettingsOpen = true;
+    private SerializedPropertySetter m_setter;
 
     private void OnEnable()
     {
         m_raymarcher = target as SDFGroupRaymarcher;
         m_serializedProperties = new SerializedProperties(serializedObject);
+        m_setter = new SerializedPropertySetter(serializedObject);
     }
 
     public override void OnInspectorGUI()
     {
+        m_setter.Clear();
         serializedObject.DrawScript();
 
         GUI.enabled = false;
@@ -66,38 +69,16 @@ public class SDFGroupRaymarcherEditor : Editor
             {
                 using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                 {
-                    if (this.DrawVector3Field(Labels.Size, m_raymarcher.Size, out Vector3 newSize))
-                    {
-                        m_raymarcher.SetSize(Vector3.Max(newSize, Vector3.zero));
-                        EditorUtility.SetDirty(m_raymarcher);
-                    }
-
-                    if (this.DrawColourField(Labels.DiffuseColour, m_raymarcher.DiffuseColour, out Color newDiffuseColour))
-                    {
-                        m_raymarcher.SetDiffuseColour(newDiffuseColour);
-                        EditorUtility.SetDirty(m_raymarcher);
-                    }
-
-                    if (this.DrawColourField(Labels.AmbientColour, m_raymarcher.AmbientColour, out Color newAmbientColour))
-                    {
-                        m_raymarcher.SetAmbientColour(newAmbientColour);
-                        EditorUtility.SetDirty(m_raymarcher);
-                    }
-
-                    if (this.DrawFloatField(Labels.GlossPower, m_raymarcher.GlossPower, out float newGlossPower, min: 0f))
-                    {
-                        m_raymarcher.SetGlossPower(newGlossPower);
-                        EditorUtility.SetDirty(m_raymarcher);
-                    }
-
-                    if (this.DrawFloatField(Labels.GlossMultiplier, m_raymarcher.GlossMultiplier, out float newGlossMultiplier, min: 0f))
-                    {
-                        m_raymarcher.SetGlossMultiplier(newGlossMultiplier);
-                        EditorUtility.SetDirty(m_raymarcher);
-                    }
+                    m_setter.DrawVector3Setting(Labels.Size, m_serializedProperties.Size, onValueChangedCallback: m_raymarcher.UpdateCubeMesh);
+                    m_setter.DrawColourSetting(Labels.DiffuseColour, m_serializedProperties.DiffuseColour, m_raymarcher.OnVisualsChanged);
+                    m_setter.DrawColourSetting(Labels.AmbientColour, m_serializedProperties.AmbientColour, m_raymarcher.OnVisualsChanged);
+                    m_setter.DrawFloatSetting(Labels.GlossPower, m_serializedProperties.GlossPower, onValueChangedCallback: m_raymarcher.OnVisualsChanged);
+                    m_setter.DrawFloatSetting(Labels.GlossMultiplier, m_serializedProperties.GlossMultiplier, onValueChangedCallback: m_raymarcher.OnVisualsChanged);
                 }
             }
         }
+
+        m_setter.Update();
     }
 
     private void OnSceneGUI()

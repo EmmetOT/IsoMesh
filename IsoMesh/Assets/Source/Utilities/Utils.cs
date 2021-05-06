@@ -282,12 +282,29 @@ public static class Utils
     public static bool All(this Vector3 input, Func<float, bool> function) => function(input.x) && function(input.y) && function(input.z);
     public static bool Any(this Vector3 input, Func<float, bool> function) => function(input.x) || function(input.y) || function(input.z);
 
+    public static (int x, int y, int z, int w) PiecewiseOp(this Vector4 input, Func<float, int> function) => (function(input.x), function(input.y), function(input.z), function(input.w));
     public static (int x, int y, int z) PiecewiseOp(this Vector3 input, Func<float, int> function) => (function(input.x), function(input.y), function(input.z));
     public static (int x, int y, int z) PiecewiseOp(this (int inX, int inY, int inZ) input, Func<int, int> function) => (function(input.inX), function(input.inY), function(input.inZ));
+    public static Vector2 PiecewiseOp(this Vector2 input, Func<float, float> function) => new Vector2(function(input.x), function(input.y));
     public static Vector3 PiecewiseOp(this Vector3 input, Func<float, float> function) => new Vector3(function(input.x), function(input.y), function(input.z));
+    public static Vector4 PiecewiseOp(this Vector4 input, Func<float, float> function) => new Vector4(function(input.x), function(input.y), function(input.z), function(input.w));
+
     public static Vector3 Abs(this Vector3 input) => PiecewiseOp(input, Mathf.Abs);
     public static Vector3 Saturate(this Vector3 input) => PiecewiseOp(input, Mathf.Clamp01);
     public static Vector3 Max0(this Vector3 input) => PiecewiseOp(input, (float f) => Mathf.Max(f, 0f));
+    public static Vector4 Abs(this Vector4 input) => PiecewiseOp(input, Mathf.Abs);
+    public static Vector4 Saturate(this Vector4 input) => PiecewiseOp(input, Mathf.Clamp01);
+    public static Vector4 Max0(this Vector4 input) => input.Max(0f);
+
+    public static Vector2 Max(this Vector2 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
+    public static Vector3 Max(this Vector3 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
+    public static Vector4 Max(this Vector4 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
+    public static Vector2 Min(this Vector2 input, float max) => PiecewiseOp(input, (float f) => Mathf.Min(f, max));
+    public static Vector3 Min(this Vector3 input, float max) => PiecewiseOp(input, (float f) => Mathf.Min(f, max));
+    public static Vector4 Min(this Vector4 input, float max) => PiecewiseOp(input, (float f) => Mathf.Min(f, max));
+    public static Vector2 Clamp(this Vector2 input, float min, float max) => PiecewiseOp(input, (float f) => Mathf.Clamp(f, min, max));
+    public static Vector3 Clamp(this Vector3 input, float min, float max) => PiecewiseOp(input, (float f) => Mathf.Clamp(f, min, max));
+    public static Vector4 Clamp(this Vector4 input, float min, float max) => PiecewiseOp(input, (float f) => Mathf.Clamp(f, min, max));
 
     /// <summary>
     /// This method calculates a new direction from the given info, which avoids a position.

@@ -12,7 +12,7 @@ struct Data
 
 #include "../MapSignedDistanceField.hlsl"
 
-void RayMarch_float//
+void RayMarch_float
 (
 in float Time,
 in float3 RayOrigin,

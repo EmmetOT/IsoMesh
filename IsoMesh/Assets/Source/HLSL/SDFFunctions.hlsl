@@ -175,9 +175,32 @@ float3 sdf_op_twist(float3 p, float k)
     return float3(mul(p.xz, m), p.y);
 }
 
-float3 sdf_op_stretch(float3 p, float3 h)
+float3 sdf_op_elongate(float3 p, float3 h, float4x4 transform)
 {
-    return p - clamp(p, -h, h);
+    float3 translation = float3(transform._m03, transform._m13, transform._m23);
+    p = mul(transform, float4(p, 0.0)).xyz;
+    p = p - clamp(p + translation, -h, h);
+    return mul(float4(p, 0.0), transform).xyz;
+}
+
+float3 sdf_op_round(float3 p, float rad)
+{
+    return p - rad;
+}
+
+float sdf_op_onion(float dist, float thickness, int count)
+{
+    //count = clamp(count, 0, 16);
+    
+    //[fastopt]
+    //for (int iter = 0; iter < count; iter++)
+    //{
+    //    dist = abs(dist) - thickness;
+    //    thickness /= 2;
+    //}
+    
+    return dist;
+    
 }
 
 float3 sdf_op_bendX(float3 p, float angle)

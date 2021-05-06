@@ -117,6 +117,7 @@ void svd_solve_sym(inout mat3x3_tri a, inout float4 sigma, mat3x3 v)
     vtav[2][1] = 0.0f;
     vtav[2][2] = a[5];
 	
+    [fastopt]
     for (int i = 0; i < SVD_NUM_SWEEPS; ++i)
     {
         svd_rotate(vtav, v, 0, 1);

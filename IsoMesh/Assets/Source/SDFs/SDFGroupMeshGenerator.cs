@@ -37,13 +37,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
         public static readonly int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
         public static readonly int Transform_Matrix4x4 = Shader.PropertyToID("_GroupTransform");
-
-        //public static readonly int Primitives_StructuredBuffer = Shader.PropertyToID("_SDFPrimitives");
-        //public static readonly int PrimitivesCount_Int = Shader.PropertyToID("_SDFPrimitivesCount");
-
-        //public static readonly int Meshes_StructuredBuffer = Shader.PropertyToID("_SDFMeshes");
-        //public static readonly int MeshCount_Int = Shader.PropertyToID("_SDFMeshCount");
-
+        
         public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
         public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
@@ -118,7 +112,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     public const string ApplyGradientDescentKeyword = "APPLY_GRADIENT_DESCENT";
     public const string OverrideQEFSettingsKeyword = "OVERRIDE_QEF_SETTINGS";
 
-    private const string ComputeShaderResourceName = "Compute_SurfaceNet";
+    private const string ComputeShaderResourceName = "Compute_IsoSurfaceExtraction";
     private const string DefaultMeshMaterial = "SDF_DefaultMaterial";
 
     private ComputeBuffer m_samplesBuffer;
@@ -291,14 +285,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     [SerializeField]
     private float m_cellDensity = 1f;
     public float CellDensity => m_cellDensity;
-
-    private bool IsBinarySearch => m_edgeIntersectionType == EdgeIntersectionType.BinarySearch;
-    private bool IsDualContouring => m_isosurfaceExtractionType == IsosurfaceExtractionType.DualContouring;
-
-    private void OnEdgeIntersectionTypeChanged() => SetEdgeIntersectionType(m_edgeIntersectionType);
-    private void OnIsosurfaceExtractionTypeChanged() => SetIsosurfaceExtractionType(m_isosurfaceExtractionType);
-    private void OnApplyGradientDescentChanged() => SetApplyGradientDescent(m_applyGradientDescent);
-
+    
     [SerializeField]
     private float m_maxAngleTolerance = 20f;
     public float MaxAngleTolerance => m_maxAngleTolerance;
@@ -386,12 +373,26 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             InitializeComputeShaderSettings();
             Group.RequestUpdate(onlySendBufferOnChange: false);
         }
+
+        Undo.undoRedoPerformed += OnUndo;
     }
 
     private void OnDisable()
     {
         m_isEnabled = false;
         ReleaseBuffers();
+
+        Undo.undoRedoPerformed -= OnUndo;
+    }
+
+    private void OnUndo()
+    {
+        if (m_initialized)
+        {
+            m_initialized = false;
+            InitializeComputeShaderSettings();
+            Run();
+        }
     }
 
     #endregion
@@ -512,12 +513,12 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         CreateVariableBuffers();
 
         // ensuring all these setting variables are sent to the gpu.
-        SetCellSize(m_cellSize);
-        SetConstrainToCellUnits(m_constrainToCellUnits);
-        SetBinarySearchIterations(m_binarySearchIterations);
-        SetVisualNormalSmoothing(m_visualNormalSmoothing);
-        SetMaxAngleTolerance(m_maxAngleTolerance);
-        SetGradientDescentIterations(m_gradientDescentIterations);
+        OnCellSizeChanged();
+        OnConstrainToCellUnitsChanged();
+        OnBinarySearchIterationsChanged();
+        OnVisualNormalSmoothingChanged();
+        OnMaxAngleToleranceChanged();
+        OnGradientDescentIterationsChanged();
         OnNudgeSettingsChanged();
         OnOutputModeChanged();
 
@@ -692,10 +693,10 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     /// </summary>
     private void ResendKeywords()
     {
-        OnQEFSettingsOverrideSet();
-        SetIsosurfaceExtractionType(m_isosurfaceExtractionType);
-        SetEdgeIntersectionType(m_edgeIntersectionType);
-        SetApplyGradientDescent(m_applyGradientDescent);
+        OnQEFSettingsOverrideChanged();
+        OnIsosurfaceExtractionTypeChanged();
+        OnEdgeIntersectionTypeChanged();
+        OnApplyGradientDescentChanged();
     }
 
     /// <summary>
@@ -804,49 +805,41 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
 
         m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, trans);
     }
-
-
-    public void SetCellCount(int cellCount)
+    
+    public void OnCellCountChanged()
     {
-        m_cellCount = cellCount;
-
+        m_bounds = new Bounds
+        {
+            extents = Vector3.one * CellCount * CellSize
+        };
+        
         if (!m_initialized || !m_isEnabled)
             return;
 
         CreateVariableBuffers();
 
+        if (m_autoUpdate)
+            UpdateMesh();
+    }
+    
+    public void OnCellSizeChanged()
+    {
         m_bounds = new Bounds
         {
             extents = Vector3.one * CellCount * CellSize
         };
-
-        if (m_autoUpdate)
-            UpdateMesh();
-    }
-
-
-    public void SetCellSize(float cellSize)
-    {
-        m_cellSize = cellSize;
 
         if (!m_initialized || !m_isEnabled)
             return;
 
         m_computeShaderInstance.SetFloat(Properties.CellSize_Float, CellSize);
 
-        m_bounds = new Bounds
-        {
-            extents = Vector3.one * CellCount * CellSize
-        };
-
         if (m_autoUpdate)
             UpdateMesh();
     }
 
-    public void SetConstrainToCellUnits(float units)
+    public void OnConstrainToCellUnitsChanged()
     {
-        m_constrainToCellUnits = units;
-
         if (!m_initialized || !m_isEnabled)
             return;
 
@@ -856,10 +849,8 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetVisualNormalSmoothing(float visualNormalSmoothing)
+    public void OnVisualNormalSmoothingChanged()
     {
-        m_visualNormalSmoothing = visualNormalSmoothing;
-
         if (!m_initialized || !m_isEnabled)
             return;
 
@@ -869,10 +860,8 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetMaxAngleTolerance(float maxAngleTolerance)
+    public void OnMaxAngleToleranceChanged()
     {
-        m_maxAngleTolerance = maxAngleTolerance;
-
         if (!m_initialized || !m_isEnabled)
             return;
 
@@ -882,10 +871,8 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetGradientDescentIterations(int gradientDescentIterations)
+    public void OnGradientDescentIterationsChanged()
     {
-        m_gradientDescentIterations = gradientDescentIterations;
-
         if (!m_initialized || !m_isEnabled)
             return;
 
@@ -895,10 +882,8 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetBinarySearchIterations(int iterations)
+    public void OnBinarySearchIterationsChanged()
     {
-        m_binarySearchIterations = iterations;
-
         if (!m_initialized || !m_isEnabled)
             return;
 
@@ -908,13 +893,11 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetIsosurfaceExtractionType(IsosurfaceExtractionType isosurfaceExtractionType)
+    public void OnIsosurfaceExtractionTypeChanged()
     {
         if (!m_initialized || !m_isEnabled)
             return;
-
-        m_isosurfaceExtractionType = isosurfaceExtractionType;
-
+        
         if (m_isosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
         {
             m_computeShaderInstance.DisableKeyword(SurfaceNetsKeyword);
@@ -930,13 +913,11 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetEdgeIntersectionType(EdgeIntersectionType edgeIntersectionType)
+    public void OnEdgeIntersectionTypeChanged()
     {
         if (!m_initialized || !m_isEnabled)
             return;
-
-        m_edgeIntersectionType = edgeIntersectionType;
-
+        
         if (m_edgeIntersectionType == EdgeIntersectionType.BinarySearch)
         {
             m_computeShaderInstance.EnableKeyword(BinarySearchKeyword);
@@ -961,7 +942,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         OnNudgeSettingsChanged();
     }
 
-    private void OnNudgeSettingsChanged()
+    public void OnNudgeSettingsChanged()
     {
         if (!m_initialized || !m_isEnabled)
             return;
@@ -973,13 +954,11 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void SetApplyGradientDescent(bool applyGradientDescent)
+    public void OnApplyGradientDescentChanged()
     {
         if (!m_initialized || !m_isEnabled)
             return;
-
-        m_applyGradientDescent = applyGradientDescent;
-
+        
         if (m_applyGradientDescent)
             m_computeShaderInstance.EnableKeyword(ApplyGradientDescentKeyword);
         else
@@ -989,25 +968,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
     
-    public void DisableQEFOverride()
-    {
-        m_overrideQEFSettings = false;
-        OnQEFSettingsOverrideSet();
-    }
-
-    /// <summary>
-    /// Enable QEF settings override and set the values.
-    /// </summary>
-    public void SetQefOverrideSettings(int sweeps, float pseudoInverseThreshold)
-    {
-        m_overrideQEFSettings = true;
-        m_qefSweeps = sweeps;
-        m_qefPseudoInverseThreshold = pseudoInverseThreshold;
-
-        OnQEFSettingsOverrideSet();
-    }
-
-    private void OnQEFSettingsOverrideSet()
+    public void OnQEFSettingsOverrideChanged()
     {
         if (!m_initialized || !m_isEnabled)
             return;
@@ -1030,7 +991,7 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         OnOutputModeChanged();
     }
 
-    private void OnOutputModeChanged()
+    public void OnOutputModeChanged()
     {
         if (m_outputMode == OutputMode.MeshFilter && TryGetOrCreateMeshGameObject())
         {
@@ -1045,49 +1006,16 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         }
     }
 
-    public void SetDensity(float volumeSize, float cellDensity)
+    public void OnDensitySettingChanged()
     {
-        m_volumeSize = volumeSize;
-        m_cellDensity = cellDensity;
-
-        SetCellSize(CellSize);
+        OnCellSizeChanged();
         CreateVariableBuffers();
     }
 
     #endregion
 
     #region SDF Group Methods
-
-    //public void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count)
-    //{
-    //    if (!m_isEnabled)
-    //        return;
-
-    //    if (!m_initialized)
-    //        InitializeComputeShaderSettings();
-
-    //    UpdateMapKernels(Properties.Primitives_StructuredBuffer, computeBuffer);
-    //    m_computeShaderInstance.SetInt(Properties.PrimitivesCount_Int, count);
-
-    //    if (m_autoUpdate)
-    //        UpdateMesh();
-    //}
-
-    //public void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count)
-    //{
-    //    if (!m_isEnabled)
-    //        return;
-
-    //    if (!m_initialized)
-    //        InitializeComputeShaderSettings();
-
-    //    UpdateMapKernels(Properties.Meshes_StructuredBuffer, computeBuffer);
-    //    m_computeShaderInstance.SetInt(Properties.MeshCount_Int, count);
-
-    //    if (m_autoUpdate)
-    //        UpdateMesh();
-    //}
-
+    
     public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
     {
         if (!m_isEnabled)
@@ -1227,20 +1155,15 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     [SerializeField]
     public struct TriangleData
     {
-        public static int Stride => sizeof(int) * 3 + sizeof(uint) * 3;
+        public static int Stride => sizeof(int) * 3;
 
         public int P_1;
         public int P_2;
         public int P_3;
-
-        public uint P_1_IsNewVertex;
-        public uint P_2_IsNewVertex;
-        public uint P_3_IsNewVertex;
-
+        
         public override string ToString() => $"P_1 = {P_1}, P_2 = {P_2}, P_3 = {P_3}";
     }
-
-
+    
     [StructLayout(LayoutKind.Sequential)]
     [SerializeField]
     public struct NewVertexData

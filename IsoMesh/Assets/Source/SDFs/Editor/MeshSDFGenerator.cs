@@ -68,12 +68,36 @@ public class MeshSDFGenerator : EditorWindow
 
     private int m_lastSubdivisionLevel = 0;
 
+    private static MeshSDFGenerator m_window;
+    private SerializedObject m_serializedObject;
+    private SerializedProperties m_serializedProperties;
+
+    private class SerializedProperties
+    {
+        public SerializedProperty Padding { get; }
+        public SerializedProperty Translation { get; }
+        public SerializedProperty Rotation { get; }
+        public SerializedProperty Scale { get; }
+        public SerializedProperty MinimumEdgeLength { get; }
+
+        public SerializedProperties(SerializedObject serializedObject)
+        {
+            Padding = serializedObject.FindProperty("m_padding");
+            Translation = serializedObject.FindProperty("m_translation");
+            Rotation = serializedObject.FindProperty("m_rotation");
+            Scale = serializedObject.FindProperty("m_scale");
+            MinimumEdgeLength = serializedObject.FindProperty("m_minimumEdgeLength");
+        }
+    }
+
     [MenuItem("Tools/Mesh to SDF")]
     public static void ShowWindow()
     {
-        GetWindow(typeof(MeshSDFGenerator));
+        m_window = GetWindow<MeshSDFGenerator>("Mesh SDF Generator");
+        m_window.m_serializedObject = new SerializedObject(m_window);
+        m_window.m_serializedProperties = new SerializedProperties(m_window.m_serializedObject);
     }
-    
+
     private void Generate()
     {
         m_tessellatedMesh = null;
@@ -96,7 +120,7 @@ public class MeshSDFGenerator : EditorWindow
         if (m_autosaveOnComplete)
             Save();
     }
-    
+
     private void Save()
     {
         if (!CanSave)
@@ -116,8 +140,12 @@ public class MeshSDFGenerator : EditorWindow
         {
             m_scrollPos = scroll.scrollPosition;
 
-            if (this.DrawObjectField("Mesh", ref m_mesh))
+            Mesh newMesh = (Mesh)EditorGUILayout.ObjectField("Mesh", m_mesh, typeof(Mesh), allowSceneObjects: false);
+
+            if (m_mesh != newMesh)
             {
+                m_mesh = newMesh;
+
                 if (m_inputMeshPreview != null)
                 {
                     DestroyImmediate(m_inputMeshPreview);
@@ -133,9 +161,13 @@ public class MeshSDFGenerator : EditorWindow
                 m_inputMeshPreview.DrawPreview(GUILayoutUtility.GetRect(200, 200));
             }
 
-            this.DrawIntField("Size", ref m_size, min: 1);
-            this.DrawFloatField("Padding", ref m_padding, min: 0f);
+            m_size = Mathf.Max(1, EditorGUILayout.IntField("Size", m_size));
+            m_padding = Mathf.Max(0f, EditorGUILayout.FloatField("Padding", m_padding));
 
+            //this.DrawIntField("Size", ref m_size, min: 1);
+            ////this.DrawFloatField("Padding", ref m_padding, out _, min: 0f);
+            //this.DrawFloatField("Padding", m_serializedProperties.Padding, out m_padding, min: 0f);
+            
             m_transformBoxOpened = EditorGUILayout.Foldout(m_transformBoxOpened, "Transform", true);
 
             if (m_transformBoxOpened)
@@ -144,15 +176,15 @@ public class MeshSDFGenerator : EditorWindow
                 {
                     using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                     {
-                        this.DrawVector3Field("Translation", ref m_translation);
-                        this.DrawVector3Field("Rotation", ref m_rotation);
-                        this.DrawVector3Field("Scale", ref m_scale);
+                        m_translation = EditorGUILayout.Vector3Field("Translation", m_translation);
+                        m_rotation = EditorGUILayout.Vector3Field("Rotation", m_rotation);
+                        m_scale = EditorGUILayout.Vector3Field("Scale", m_scale);
                     }
                 }
             }
-
-            this.DrawBoolField("Tessellate Mesh First", ref m_tesselateMesh);
-            this.DrawBoolField("Sample UVs", ref m_sampleUVs);
+            
+            m_tesselateMesh = EditorGUILayout.Toggle("Tessellate Mesh First", m_tesselateMesh);
+            m_sampleUVs = EditorGUILayout.Toggle("Sample UVs", m_tesselateMesh);
 
             if (m_tesselateMesh)
             {
@@ -174,13 +206,19 @@ public class MeshSDFGenerator : EditorWindow
                             m_tesselatedMeshPreview.DrawPreview(GUILayoutUtility.GetRect(200, 200));
                         }
 
-                        this.DrawIntField("Subdivisions", ref m_subdivisions, min: 0, max: 4);
-                        this.DrawFloatField("Minimum Edge Length", ref m_minimumEdgeLength, min: 0);
+                        m_subdivisions = Mathf.Clamp(EditorGUILayout.IntField("Subdivisions", m_subdivisions), 0, 4);
+                        m_minimumEdgeLength = Mathf.Max(EditorGUILayout.FloatField("Minimum Edge Length", m_minimumEdgeLength), 0f);
+
+
+                        //this.DrawIntField("Subdivisions", ref m_subdivisions, min: 0, max: 4);
+                        ////this.DrawFloatField("Minimum Edge Length", ref m_minimumEdgeLength, min: 0);
+                        //this.DrawFloatField("Minimum Edge Length", m_serializedProperties.MinimumEdgeLength, out m_minimumEdgeLength, min: 0f);
                     }
                 }
             }
 
-            this.DrawBoolField("Autosave On Complete", ref m_autosaveOnComplete);
+            m_autosaveOnComplete = EditorGUILayout.Toggle("Autosave On Complete", m_autosaveOnComplete);
+            //this.DrawBoolField("Autosave On Complete", ref m_autosaveOnComplete);
 
             GUI.enabled = m_mesh != null;
 
@@ -367,7 +405,7 @@ public class MeshSDFGenerator : EditorWindow
             {
                 MeshSampleComputeShader.DisableKeyword(WriteUVsKeyword);
             }
-            
+
             MeshSampleComputeShader.SetInt(Properties.TriangleCount_Int, m_triangles.Length);
             MeshSampleComputeShader.SetInt(Properties.VertexCount_Int, m_vertices.Length);
 

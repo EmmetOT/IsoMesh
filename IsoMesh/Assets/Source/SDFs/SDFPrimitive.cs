@@ -10,10 +10,24 @@ using UnityEditor;
 [ExecuteInEditMode]
 public class SDFPrimitive : SDFObject
 {
+    [SerializeField]
+    private SDFPrimitiveType m_type;
+    public SDFPrimitiveType Type => m_type;
+
+    [SerializeField]
+    private Vector4 m_data = new Vector4(1f, 1f, 1f, 0f);
+
+    [SerializeField]
+    protected SDFCombineType m_operation;
+    public SDFCombineType Operation => m_operation;
+
+    [SerializeField]
+    protected bool m_flip = false;
+
     protected override void TryDeregister()
     {
         base.TryDeregister();
-        
+
         Group?.Deregister(this);
     }
 
@@ -24,60 +38,22 @@ public class SDFPrimitive : SDFObject
         Group?.Register(this);
     }
 
-#if UNITY_EDITOR
-    private void OnDrawGizmos()
-    {
-        Color col = m_operation == SDFOp.SmoothSubtract ? Color.red : Color.blue;
-
-        switch (m_type)
-        {
-            case SDFPrimitiveType.Cuboid:
-                Gizmos.color = col;
-                Gizmos.matrix = transform.localToWorldMatrix;
-                Gizmos.DrawWireCube(Vector3.zero, m_data.XYZ() * 2f);
-                break;
-            case SDFPrimitiveType.BoxFrame:
-                Gizmos.color = col;
-                Gizmos.matrix = transform.localToWorldMatrix;
-                Gizmos.DrawWireCube(Vector3.zero, m_data.XYZ() * 2f);
-                break;
-            default:
-                Handles.color = col;
-                Handles.matrix = transform.localToWorldMatrix;
-                Handles.DrawWireDisc(Vector3.zero, Vector3.up, m_data.x);
-                break;
-        }
-    }
-
-#endif
-
-    [SerializeField]
-    private SDFPrimitiveType m_type;
-    public SDFPrimitiveType Type
-    {
-        get => m_type;
-        set => m_type = value;
-    }
-    
-    [SerializeField]
-    private Vector4 m_data = new Vector4(1f, 1f, 1f, 0f);
-    public Vector4 Data => m_data;
-
     public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
     {
         // note: has room for six more floats (minbounds, maxbounds)
         return new SDFGPUData
         {
-            Type = (int)m_type,
+            Type = (int)m_type + 1,
             Data = m_data,
             Transform = transform.worldToLocalMatrix,
-            Operation = (int)m_operation,
+            CombineType = (int)m_operation,
             Flip = m_flip ? -1 : 1
         };
     }
 
     #region Create Menu Items
 
+#if UNITY_EDITOR
     private static void CreateNewPrimitive(SDFPrimitiveType type)
     {
         GameObject selection = Selection.activeGameObject;
@@ -87,7 +63,7 @@ public class SDFPrimitive : SDFObject
         child.transform.Reset();
 
         SDFPrimitive newPrimitive = child.AddComponent<SDFPrimitive>();
-        newPrimitive.Type = type;
+        newPrimitive.m_type = type;
 
         Selection.activeGameObject = child;
     }
@@ -104,6 +80,7 @@ public class SDFPrimitive : SDFObject
     [MenuItem("GameObject/SDFs/Frame", false, priority: 2)]
     private static void CreateFrame(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.BoxFrame);
 
+#endif
     #endregion
 }
 

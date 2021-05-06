@@ -37,7 +37,7 @@ public class SDFGroupEditor : Editor
         m_serializedProperties = new SerializedProperties(serializedObject);
         m_sdfGroup = target as SDFGroup;
     }
-
+    
     public override void OnInspectorGUI()
     {
         serializedObject.DrawScript();
@@ -50,17 +50,11 @@ public class SDFGroupEditor : Editor
             {
                 using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                 {
-                    if (this.DrawFloatField(Labels.Smoothing, m_sdfGroup.Smoothing, out float newSmoothingValue, min: SDFGroup.MIN_SMOOTHING))
-                    {
-                        m_sdfGroup.SetSmoothing(newSmoothingValue);
-                        EditorUtility.SetDirty(this);
-                    }
+                    if (this.DrawFloatField(Labels.Smoothing, m_serializedProperties.Smoothing, out float val, min: SDFGroup.MIN_SMOOTHING))
+                        m_sdfGroup.SetSmoothing(val);
 
-                    if (this.DrawFloatField(Labels.NormalSmoothing, m_sdfGroup.NormalSmoothing, out float newNormalSmoothingValue, min: SDFGroup.MIN_SMOOTHING))
-                    {
-                        m_sdfGroup.SetNormalSmoothing(newNormalSmoothingValue);
-                        EditorUtility.SetDirty(this);
-                    }
+                    if (this.DrawFloatField(Labels.NormalSmoothing, m_serializedProperties.NormalSmoothing, out val, min: SDFGroup.MIN_SMOOTHING))
+                        m_sdfGroup.SetSmoothing(val);
                 }
             }
         }

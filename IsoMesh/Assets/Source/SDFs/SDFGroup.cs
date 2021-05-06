@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Compilation;
 
 /// <summary>
 /// An SDF group is a collection of sdf primitives, meshes, and operations which mutually interact.
@@ -10,7 +11,7 @@ using UnityEditor;
 /// the resulting buffers to SDF Components. These components must be a child of the group and implement the ISDFComponent interface.
 /// </summary>
 [ExecuteInEditMode]
-public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
+public class SDFGroup : MonoBehaviour
 {
     #region Fields and Properties
 
@@ -47,18 +48,18 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         m_smoothing = smoothing;
         OnSettingsChanged();
     }
-
+    //
     [SerializeField]
     private float m_normalSmoothing = 0.015f;
     public float NormalSmoothing => m_normalSmoothing;
-    public void SetNormalSmoothing(float normalSmoothing)
+    public void SetNormalSmoothing(float normalSmoothing)//
     {
         m_normalSmoothing = normalSmoothing;
         OnSettingsChanged();
     }
 
     private List<ISDFGroupComponent> m_sdfComponents = new List<ISDFGroupComponent>();
-    
+
     private ComputeBuffer m_dataBuffer;
 
     private ComputeBuffer m_settingsBuffer;
@@ -77,7 +78,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
     private static ComputeBuffer m_meshSamplesBuffer;
     private static ComputeBuffer m_meshPackedUVsBuffer;
-    
+
     private List<SDFGPUData> m_data = new List<SDFGPUData>();
     private readonly List<int> m_dataSiblingIndices = new List<int>();
 
@@ -128,7 +129,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
         RequestUpdate();
     }
-    
+
     public void Deregister(SDFObject sdfObject)
     {
         bool wasEmpty = IsEmpty;
@@ -147,7 +148,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
                     m_isGlobalMeshDataDirty = true;
             }
         }
-        
+
         m_isLocalDataDirty = true;
 
         // this is almost certainly overkill, but i like the kind of guaranteed stability
@@ -159,7 +160,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
         RequestUpdate();
     }
-    
+
     public bool IsRegistered(SDFObject sdfObject) => !m_sdfObjects.IsNullOrEmpty() && m_sdfObjects.Contains(sdfObject);
 
     #endregion
@@ -168,6 +169,8 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
     private void OnEnable()
     {
+        CompilationPipeline.compilationStarted += OnCompilationStarted;
+
         m_isEnabled = true;
         m_isGlobalMeshDataDirty = true;
         m_isLocalDataDirty = true;
@@ -187,17 +190,21 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
     private void OnDisable()
     {
+        CompilationPipeline.compilationStarted -= OnCompilationStarted;
+
         m_isEnabled = false;
         IsReady = false;
-        
+
         m_dataBuffer?.Dispose();
         m_settingsBuffer?.Dispose();
     }
-
+    
     private void OnApplicationQuit()
     {
         // static buffers can't be cleared in ondisable or something,
         // because lots of objects might be using them
+        m_isEnabled = false;
+
         m_meshSamplesBuffer?.Dispose();
         m_meshPackedUVsBuffer?.Dispose();
     }
@@ -220,12 +227,12 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
             if (!isNull)
                 m_isLocalDataDirty |= m_sdfObjects[i].IsDirty;
         }
-        
+
         if (nullHit)
             ClearNulls(m_sdfObjects);
 
         bool changed = false;
-        
+
         if (m_forceUpdateNextFrame || m_isGlobalMeshDataDirty || m_isLocalDataDirty || transform.hasChanged)
         {
             changed = true;
@@ -254,7 +261,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
     {
         if (!m_isEnabled)
             return;
-
+        
         // blocking readiness because we're updating 
         // all the information at once, we don't want groups to start acting
         // on the info immediately
@@ -269,7 +276,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         else
             for (int i = 0; i < m_sdfComponents.Count; i++)
                 m_sdfComponents[i].OnNotEmpty();
-        
+
         RebuildData(onlySendBufferOnChange);
         OnSettingsChanged();
 
@@ -360,7 +367,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
 
         return newBuffers;
     }
-
+    
     /// <summary>
     /// Repopulate the data relating to SDF primitives (spheres, toruses, cuboids etc) and SDF meshes (which point to where in the list of sample and uv data they begin, and how large they are)
     /// </summary>
@@ -406,7 +413,7 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
             m_data.Add(sdfObject.GetSDFGPUData(meshStartIndex, uvStartIndex));
             m_dataSiblingIndices.Add(sdfObject.transform.GetSiblingIndex());
         }
-        
+
         // sort this list by sibling index, which ensures that this list is always in the same
         // order as is shown in the unity hierarchy. this is important because some of the sdf operations are ordered
         m_data = m_data.OrderBy(d => m_dataSiblingIndices[m_data.IndexOf(d)]).ToList();
@@ -464,18 +471,16 @@ public class SDFGroup : MonoBehaviour, ISerializationCallbackReceiver
         for (int i = 0; i < m_sdfComponents.Count; i++)
             m_sdfComponents[i].UpdateSettingsBuffer(m_settingsBuffer);
 
-        m_settingsBuffer.SetData(m_settingsArray);//
+        m_settingsBuffer.SetData(m_settingsArray);
     }
 
-    public void OnBeforeSerialize()
+    private void OnCompilationStarted(object param)
     {
-        // these are the 'static buffers' and need to be disposed of rarely - only before deserializing and on application quit
+        m_isEnabled = false;
+        
         m_meshSamplesBuffer?.Dispose();
         m_meshPackedUVsBuffer?.Dispose();
     }
-
-    // this method only needs to be here because ISerializationCallbackReceiver demands it :O
-    public void OnAfterDeserialize() { }
     
     #endregion
 
