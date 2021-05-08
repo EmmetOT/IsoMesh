@@ -128,7 +128,7 @@ namespace IsoMesh
         private VertexData[] m_vertices;
         private TriangleData[] m_triangles;
         private CellData[] m_cells;
-
+        
         [SerializeField]
         private ComputeShader m_computeShader;
         private ComputeShader ComputeShader
@@ -170,20 +170,6 @@ namespace IsoMesh
         [SerializeField]
         [HideInInspector]
         private GameObject m_meshFilterGameObject;
-        public bool TryGetOrCreateMeshGameObject()
-        {
-            if (m_outputMode != OutputMode.MeshFilter)
-                return false;
-
-            if (m_meshFilterGameObject)
-                return true;
-
-            m_meshFilterGameObject = new GameObject("Mesh");
-            m_meshFilterGameObject.transform.SetParent(transform);
-            m_meshFilterGameObject.transform.Reset();
-            return true;
-        }
-
 
         [SerializeField]
         [HideInInspector]
@@ -207,23 +193,33 @@ namespace IsoMesh
 
         [SerializeField]
         [HideInInspector]
-        private MeshRenderer m_renderer;
-        public MeshRenderer Renderer
+        private MeshCollider m_meshCollider;
+        private MeshCollider MeshCollider
         {
             get
             {
-                if (m_renderer)
-                    return m_renderer;
+                if (!TryGetOrCreateMeshGameObject())
+                    return null;
 
-                if (TryGetOrCreateMeshGameObject())
-                {
-                    m_renderer = m_meshFilterGameObject.GetOrAddComponent<MeshRenderer>();
+                if (m_meshCollider || m_meshFilterGameObject.TryGetComponent(out m_meshCollider))
+                    return m_meshCollider;
 
-                    if (!m_renderer.sharedMaterial)
-                        m_renderer.sharedMaterial = Resources.Load<Material>(DefaultMeshMaterial);
+                return null;
+            }
+        }
 
-                    return m_renderer;
-                }
+        [SerializeField]
+        [HideInInspector]
+        private MeshRenderer m_meshRenderer;
+        public MeshRenderer MeshRenderer
+        {
+            get
+            {
+                if (!TryGetOrCreateMeshGameObject())
+                    return null;
+
+                if (m_meshRenderer || m_meshFilterGameObject.TryGetComponent(out m_meshRenderer))
+                    return m_meshRenderer;
 
                 return null;
             }
@@ -366,13 +362,16 @@ namespace IsoMesh
         {
             m_isEnabled = true;
             m_initialized = false;
+
             if (Group.IsReady)
             {
                 InitializeComputeShaderSettings();
                 Group.RequestUpdate(onlySendBufferOnChange: false);
             }
 
+#if UNITY_EDITOR
             Undo.undoRedoPerformed += OnUndo;
+#endif
         }
 
         private void OnDisable()
@@ -380,7 +379,9 @@ namespace IsoMesh
             m_isEnabled = false;
             ReleaseBuffers();
 
+#if UNITY_EDITOR
             Undo.undoRedoPerformed -= OnUndo;
+#endif
         }
 
         private void OnUndo()
@@ -399,13 +400,16 @@ namespace IsoMesh
 
         private void Update()
         {
-            if (transform.hasChanged && Group.IsReady && !Group.IsEmpty)
+            if (transform.hasChanged && Group.IsReady && !Group.IsEmpty && Group.IsRunning)
             {
-                SetTransform(transform.localToWorldMatrix);
+                SendTransformToGPU();
                 UpdateMesh();
             }
 
             transform.hasChanged = false;
+
+            if (m_meshFilterGameObject)
+                m_meshFilterGameObject.transform.hasChanged = false;
         }
 
         private void LateUpdate()
@@ -448,11 +452,12 @@ namespace IsoMesh
             {
                 GetMeshData(out Vector3[] vertices, out Vector3[] normals, out Vector2[] uvs, out int[] triangles);
 
-                Renderer.enabled = vertices.Length > 0;
+                if (MeshRenderer)
+                    MeshRenderer.enabled = vertices.Length > 0;
 
                 if (vertices.IsNullOrEmpty())
                     return;
-
+                
                 m_mesh = new Mesh()
                 {
                     indexFormat = UnityEngine.Rendering.IndexFormat.UInt32,
@@ -464,7 +469,25 @@ namespace IsoMesh
 
                 m_mesh.RecalculateBounds();
                 MeshFilter.mesh = m_mesh;
+
+                if (MeshCollider)
+                    MeshCollider.sharedMesh = m_mesh;
             }
+        }
+
+        private bool TryGetOrCreateMeshGameObject()
+        {
+            if (m_outputMode != OutputMode.MeshFilter)
+                return false;
+
+            if (m_meshFilterGameObject)
+                return true;
+
+            m_meshFilterGameObject = new GameObject("Mesh");
+            m_meshFilterGameObject.transform.SetParent(transform);
+            m_meshFilterGameObject.transform.Reset();
+
+            return true;
         }
 
         #endregion
@@ -489,7 +512,7 @@ namespace IsoMesh
 
             m_computeShaderInstance = Instantiate(ComputeShader);
 
-            SetTransform(transform.localToWorldMatrix);
+            SendTransformToGPU();
 
             ResendKeywords();
 
@@ -695,6 +718,11 @@ namespace IsoMesh
             OnIsosurfaceExtractionTypeChanged();
             OnEdgeIntersectionTypeChanged();
             OnApplyGradientDescentChanged();
+
+            //if (m_outputMode == OutputMode.Procedural)
+            //    m_computeShaderInstance.EnableKeyword(ApplyTransformKeyword);
+            //else
+            //    m_computeShaderInstance.DisableKeyword(ApplyTransformKeyword);
         }
 
         /// <summary>
@@ -705,9 +733,9 @@ namespace IsoMesh
             // this only happens when unity is recompiling. this is annoying and hacky but it works.
             if (m_counterBuffer == null || !m_counterBuffer.IsValid())
                 return;
-
+            
             ResetCounters();
-
+            
             DispatchMap();
             DispatchGenerateVertices();
             DispatchNumberVertices();
@@ -721,6 +749,8 @@ namespace IsoMesh
         /// </summary>
         private void ResetCounters()
         {
+            m_counterBuffer.SetData(m_counterArray);
+            
             m_vertexDataBuffer?.SetCounterValue(0);
             m_triangleDataBuffer?.SetCounterValue(0);
 
@@ -743,8 +773,6 @@ namespace IsoMesh
 
         private void DispatchGenerateVertices()
         {
-            m_counterBuffer.SetData(m_counterArray);
-
             m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.GenerateVertices, out uint x, out uint y, out uint z);
             m_computeShaderInstance.Dispatch(m_kernels.GenerateVertices, Mathf.CeilToInt(SamplesPerSide / (float)x), Mathf.CeilToInt(SamplesPerSide / (float)y), Mathf.CeilToInt(SamplesPerSide / (float)z));
         }
@@ -782,7 +810,7 @@ namespace IsoMesh
             m_counterBuffer.GetData(m_outputCounterArray);
             int vertexCount = m_outputCounterArray[VERTEX_COUNTER] + m_outputCounterArray[INTERMEDIATE_VERTEX_COUNTER];
             int triangleCount = m_outputCounterArray[TRIANGLE_COUNTER];
-
+            
             vertices = new Vector3[vertexCount];
             m_meshVerticesBuffer.GetData(vertices);
 
@@ -795,13 +823,13 @@ namespace IsoMesh
             triangles = new int[triangleCount * 3];
             m_meshTrianglesBuffer.GetData(triangles);
         }
-
-        private void SetTransform(Matrix4x4 trans)
+        
+        private void SendTransformToGPU()
         {
             if (!m_initialized || !m_isEnabled)
                 return;
-
-            m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, trans);
+            
+            m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, transform.localToWorldMatrix);
         }
 
         public void OnCellCountChanged()
@@ -982,7 +1010,7 @@ namespace IsoMesh
             if (m_autoUpdate)
                 UpdateMesh();
         }
-
+        
         public void SetOutputMode(OutputMode outputMode)
         {
             m_outputMode = outputMode;
@@ -994,7 +1022,10 @@ namespace IsoMesh
             if (m_outputMode == OutputMode.MeshFilter && TryGetOrCreateMeshGameObject())
             {
                 m_meshFilterGameObject.SetActive(true);
-                Renderer.enabled = !Group.IsEmpty;
+
+                if (MeshRenderer)
+                    MeshRenderer.enabled = !Group.IsEmpty;
+
                 Group.RequestUpdate(onlySendBufferOnChange: false);
             }
             else if (m_outputMode == OutputMode.Procedural)
@@ -1060,14 +1091,14 @@ namespace IsoMesh
 
         public void OnEmpty()
         {
-            if (Renderer)
-                Renderer.enabled = false;
+            if (MeshRenderer)
+                MeshRenderer.enabled = false;
         }
 
         public void OnNotEmpty()
         {
-            if (Renderer)
-                Renderer.enabled = m_outputMode == OutputMode.MeshFilter;
+            if (MeshRenderer)
+                MeshRenderer.enabled = m_outputMode == OutputMode.MeshFilter;
         }
 
         public void OnPrimitivesChanged()

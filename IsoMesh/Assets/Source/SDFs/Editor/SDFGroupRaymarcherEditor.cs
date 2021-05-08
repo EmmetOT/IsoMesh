@@ -6,6 +6,7 @@ using UnityEditor;
 namespace IsoMesh.Editor
 {
     [CustomEditor(typeof(SDFGroupRaymarcher))]
+    [CanEditMultipleObjects]
     public class SDFGroupRaymarcherEditor : UnityEditor.Editor
     {
         private static class Labels

@@ -89,6 +89,7 @@ float3 CellCoordinateToVertex(int x, int y, int z)
     float zPos = lerp(-bound, bound, saturate(z / gridSize));
 
     float3 untransformed = float3(xPos, yPos, zPos);
+
     return mul(_GroupTransform, float4(untransformed, 1.0)).xyz;
 }
 
@@ -271,6 +272,8 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     
     bool isOnSurface = false;
     
+    int maxIndex = (_PointsPerSide * _PointsPerSide * _PointsPerSide);
+    
     // iterate over every vertex,
     // if the vertex is valid (not out of bounds) and its sign is different from the first vertex,
     // then this voxel contains surface
@@ -278,7 +281,8 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     [fastopt]
     for (int i = 1; i < 8; i++)
     {
-        isOnSurface = isOnSurface || (sign_A != sign(_Samples[vertices[i]]));
+        int index = vertices[i];
+        isOnSurface = isOnSurface || (index < maxIndex && sign_A != sign(_Samples[index]));
     }
     
     if (!isOnSurface)
@@ -453,9 +457,6 @@ bool TryGetAdjacentCubesX(int x, int y, int z, out int cube0index, out int cube1
     edgeDist_A = 0.0;
     edgeDist_B = 0.0;
     
-    //if (y <= 0 || z <= 0)
-    //    return false;
-    
     // get the indices of the three (possible) cubes which share a common x axis
     cube0index = CellCoordinateToIndex(x, y, z - 1);
     cube1index = CellCoordinateToIndex(x, y - 1, z);
@@ -477,9 +478,6 @@ bool TryGetAdjacentCubesY(int x, int y, int z, out int cube0index, out int cube1
     edgeDist_A = 0.0;
     edgeDist_C = 0.0;
     
-    //if (x <= 0 || z <= 0)
-    //    return false;
-    
     // get the indices of the three (possible) cubes which share a common y axis
     cube0index = CellCoordinateToIndex(x - 1, y, z);
     cube1index = CellCoordinateToIndex(x, y, z - 1);
@@ -499,9 +497,6 @@ bool TryGetAdjacentCubesZ(int x, int y, int z, out int cube0index, out int cube1
     
     edgeDist_A = 0.0;
     edgeDist_E = 0.0;
-    
-    //if (x <= 0 || y <= 0)
-    //    return false;
     
     // get the indices of the three (possible) cubes which share a common z axis
     cube0index = CellCoordinateToIndex(x, y - 1, z);
@@ -643,7 +638,6 @@ void SurfaceNets_GenerateTriangles(uint3 id : SV_DispatchThreadID)
 }
 
 AppendStructuredBuffer<NewVertexData> _IntermediateVertexBuffer;
-
 StructuredBuffer<TriangleData> _TriangleDataPoints_Structured;
 
 // dispatched for each triangle, this kernel unpacks the triangle data structs

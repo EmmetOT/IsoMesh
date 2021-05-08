@@ -1,11 +1,10 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
 namespace IsoMesh.Editor
 {
     [CustomEditor(typeof(SDFGroupMeshGenerator))]
+    [CanEditMultipleObjects]
     public class SDFGroupMeshGeneratorEditor : UnityEditor.Editor
     {
         private static class Labels
@@ -125,7 +124,7 @@ namespace IsoMesh.Editor
             GUI.enabled = false;
             EditorGUILayout.PropertyField(m_serializedProperties.SDFGroup, Labels.SDFGroup);
             GUI.enabled = true;
-
+            
             m_setter.DrawProperty(Labels.AutoUpdate, m_serializedProperties.AutoUpdate);
 
             m_setter.DrawEnumSetting<OutputMode>(Labels.OutputMode, m_serializedProperties.OutputMode, onValueChangedCallback: m_sdfGroupMeshGen.OnOutputModeChanged);

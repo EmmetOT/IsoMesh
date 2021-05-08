@@ -32,7 +32,6 @@ namespace IsoMesh
 
         [SerializeField]
         private bool m_isRunning = true;
-        public void SetRunning(bool isRunning) => m_isRunning = isRunning;
 
         private bool m_forceUpdateNextFrame = false;
 
@@ -56,7 +55,7 @@ namespace IsoMesh
             m_smoothing = smoothing;
             OnSettingsChanged();
         }
-        //
+
         [SerializeField]
         private float m_normalSmoothing = 0.015f;
         public float NormalSmoothing => m_normalSmoothing;
@@ -177,7 +176,10 @@ namespace IsoMesh
 
         private void OnEnable()
         {
+#if UNITY_EDITOR
             CompilationPipeline.compilationStarted += OnCompilationStarted;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+#endif
 
             m_isEnabled = true;
             m_isGlobalMeshDataDirty = true;
@@ -198,7 +200,10 @@ namespace IsoMesh
 
         private void OnDisable()
         {
+#if UNITY_EDITOR
             CompilationPipeline.compilationStarted -= OnCompilationStarted;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+#endif
 
             m_isEnabled = false;
             IsReady = false;
@@ -483,6 +488,14 @@ namespace IsoMesh
         }
 
         private void OnCompilationStarted(object param)
+        {
+            m_isEnabled = false;
+
+            m_meshSamplesBuffer?.Dispose();
+            m_meshPackedUVsBuffer?.Dispose();
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange stateChange)
         {
             m_isEnabled = false;
 
