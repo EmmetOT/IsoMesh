@@ -22,9 +22,13 @@ public struct SDFGPUData
     
     public override string ToString()
     {
-        if (Type < 0)
+        if (Type == 0)
         {
-            return $"[Mesh] Size = {(int)Data.x}, MinBounds = {MinBounds}, MaxBounds = {MaxBounds}, StartIndex = {(int)Data.y}";
+            return $"[Mesh] Size = {(int)Data.x}, MinBounds = {MinBounds}, MaxBounds = {MaxBounds}, StartIndex = {(int)Data.y}, UVStartIndex = {(int)Data.z}";
+        }
+        else if (Type < 0)
+        {
+            return $"[{(SDFOperationType)Type}] Data = {Data}";
         }
         else
         {

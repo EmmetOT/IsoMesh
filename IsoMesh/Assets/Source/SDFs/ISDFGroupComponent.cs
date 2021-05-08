@@ -4,7 +4,7 @@ public interface ISDFGroupComponent
 {
     // update methods are only called when buffer is created or size changes
     void UpdateSettingsBuffer(ComputeBuffer computeBuffer);
-    void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer);
+    //void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer);
 
     void UpdateDataBuffer(ComputeBuffer computeBuffer, int count);
     

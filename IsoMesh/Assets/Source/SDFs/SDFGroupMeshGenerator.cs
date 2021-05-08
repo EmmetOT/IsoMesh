@@ -41,9 +41,6 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
         public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
         public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
-        public static readonly int MeshSamples_StructuredBuffer = Shader.PropertyToID("_SDFMeshSamples");
-        public static readonly int MeshPackedUVs_StructuredBuffer = Shader.PropertyToID("_SDFMeshPackedUVs");
-
         public static readonly int Samples_RWBuffer = Shader.PropertyToID("_Samples");
         public static readonly int VertexData_AppendBuffer = Shader.PropertyToID("_VertexDataPoints");
         public static readonly int CellData_RWBuffer = Shader.PropertyToID("_CellDataPoints");
@@ -1031,20 +1028,20 @@ public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
             UpdateMesh();
     }
 
-    public void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
-    {
-        if (!m_isEnabled)
-            return;
+    //public void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
+    //{
+    //    if (!m_isEnabled)
+    //        return;
 
-        if (!m_initialized)
-            InitializeComputeShaderSettings();
+    //    if (!m_initialized)
+    //        InitializeComputeShaderSettings();
 
-        UpdateMapKernels(Properties.MeshSamples_StructuredBuffer, samplesBuffer);
-        UpdateMapKernels(Properties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
+    //    UpdateMapKernels(Properties.MeshSamples_StructuredBuffer, samplesBuffer);
+    //    UpdateMapKernels(Properties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
 
-        if (m_autoUpdate)
-            UpdateMesh();
-    }
+    //    if (m_autoUpdate)
+    //        UpdateMesh();
+    //}
 
     public void UpdateSettingsBuffer(ComputeBuffer computeBuffer)
     {

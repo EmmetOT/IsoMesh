@@ -243,7 +243,7 @@ float3 ComputeGradient(float3 p, SDFGPUData data, float epsilon, float boundsOff
 float3 unsignedDirection_mesh(float3 p, SDFGPUData data, out float distSign, out float3 transformedP)
 {
     transformedP = mul(data.Transform, float4(p, 1.0)).xyz;
-    
+
     const float epsilon = 0.75;
     
     // note: this should be larger than epsilon
@@ -270,7 +270,7 @@ float sdf(float3 p, SDFGPUData data)
         float distSign;
         float3 transformedP;
         float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
-
+        
         return length(vec) * distSign * data.Flip;
     }
     //else if (data.IsOperation())

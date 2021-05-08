@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-//using Sirenix.OdinInspector;
 
 /// <summary>
 /// This class generates a cube mesh, gives it a raymarching material, and passes the contents of the SDF group into that material.
@@ -19,10 +18,7 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
 
         public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
         public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
-
-        public static int MeshSamples_StructuredBuffer = Shader.PropertyToID("_SDFMeshSamples");
-        public static int MeshPackedUVs_StructuredBuffer = Shader.PropertyToID("_SDFMeshPackedUVs");
-
+        
         public static int Diffuse_Colour = Shader.PropertyToID("_DiffuseColour");
         public static int Ambient_Colour = Shader.PropertyToID("_AmbientColour");
         public static int GlossPower_Float = Shader.PropertyToID("_GlossPower");
@@ -169,23 +165,10 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
         m_renderer.SetPropertyBlock(m_propertyBlock);
     }
     
-    public void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer)
-    {
-        if (m_propertyBlock == null)
-            m_propertyBlock = new MaterialPropertyBlock();
-        
-        m_propertyBlock.SetBuffer(MaterialProperties.MeshSamples_StructuredBuffer, samplesBuffer);
-        m_propertyBlock.SetBuffer(MaterialProperties.MeshPackedUVs_StructuredBuffer, packedUVsBuffer);
-
-        m_renderer.SetPropertyBlock(m_propertyBlock);
-    }
-
     public void OnEmpty() => m_renderer.enabled = false;
 
     public void OnNotEmpty() => m_renderer.enabled = true;
-
-    public void OnPrimitivesChanged() { }
-
+    
     #endregion
 
     #region Helper Methods

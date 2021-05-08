@@ -15,6 +15,12 @@ public class SDFGroup : MonoBehaviour
 {
     #region Fields and Properties
 
+    private static class GlobalProperties
+    {
+        public static int MeshSamples_StructuredBuffer = Shader.PropertyToID("_SDFMeshSamples");
+        public static int MeshPackedUVs_StructuredBuffer = Shader.PropertyToID("_SDFMeshPackedUVs");
+    }
+
     public const float MIN_SMOOTHING = 0.00001f;
 
     /// <summary>
@@ -99,14 +105,6 @@ public class SDFGroup : MonoBehaviour
         if (m_sdfObjects.Contains(sdfObject))
             return;
 
-        bool wasEmpty = IsEmpty;
-
-        m_sdfObjects.Add(sdfObject);
-        m_isLocalDataDirty = true;
-
-        // this is almost certainly overkill, but i like the kind of guaranteed stability
-        ClearNulls(m_sdfObjects);
-
         if (sdfObject is SDFMesh sdfMesh)
         {
             // check if this is a totally new mesh that no group has seen
@@ -122,6 +120,14 @@ public class SDFGroup : MonoBehaviour
 
             m_meshCounts[sdfMesh.ID]++;
         }
+
+        bool wasEmpty = IsEmpty;
+
+        m_sdfObjects.Add(sdfObject);
+        m_isLocalDataDirty = true;
+
+        // this is almost certainly overkill, but i like the kind of guaranteed stability
+        ClearNulls(m_sdfObjects);
 
         if (wasEmpty && !IsEmpty)
             for (int i = 0; i < m_sdfComponents.Count; i++)
@@ -151,7 +157,7 @@ public class SDFGroup : MonoBehaviour
 
         m_isLocalDataDirty = true;
 
-        // this is almost certainly overkill, but i like the kind of guaranteed stability
+        // this is almost certainly overkill
         ClearNulls(m_sdfObjects);
 
         if (!wasEmpty && IsEmpty)
@@ -402,14 +408,14 @@ public class SDFGroup : MonoBehaviour
             if (sdfObject is SDFMesh mesh)
             {
                 // get the index in the global samples buffer where this particular mesh's samples begin
-                if (!m_meshSdfSampleStartIndices.TryGetValue(mesh.ID, out int sampleStartIndex))
+                if (!m_meshSdfSampleStartIndices.TryGetValue(mesh.ID, out meshStartIndex))
                     globalBuffersChanged = RebuildGlobalMeshData(m_sdfObjects, onlySendBufferOnChange); // we don't recognize this mesh so we may need to rebuild the entire global list of mesh samples and UVs
 
                 // likewise, if this mesh has UVs, get the index where they begin too
                 if (mesh.Asset.HasUVs)
                     m_meshSdfUVStartIndices.TryGetValue(mesh.ID, out uvStartIndex);
             }
-
+            
             m_data.Add(sdfObject.GetSDFGPUData(meshStartIndex, uvStartIndex));
             m_dataSiblingIndices.Add(sdfObject.transform.GetSiblingIndex());
         }
@@ -417,7 +423,7 @@ public class SDFGroup : MonoBehaviour
         // sort this list by sibling index, which ensures that this list is always in the same
         // order as is shown in the unity hierarchy. this is important because some of the sdf operations are ordered
         m_data = m_data.OrderBy(d => m_dataSiblingIndices[m_data.IndexOf(d)]).ToList();
-
+        
         bool sendBuffer = !onlySendBufferOnChange;
 
         // check whether we need to create a new buffer. buffers are fixed sizes so the most common occasion for this is simply a change of size
@@ -442,8 +448,8 @@ public class SDFGroup : MonoBehaviour
         // if we also changed the global mesh data buffer in this method, we need to send that as well
         if (!onlySendBufferOnChange || globalBuffersChanged)
         {
-            for (int i = 0; i < m_sdfComponents.Count; i++)
-                m_sdfComponents[i].UpdateGlobalMeshDataBuffers(m_meshSamplesBuffer, m_meshPackedUVsBuffer);
+            Shader.SetGlobalBuffer(GlobalProperties.MeshSamples_StructuredBuffer, m_meshSamplesBuffer);
+            Shader.SetGlobalBuffer(GlobalProperties.MeshPackedUVs_StructuredBuffer, m_meshPackedUVsBuffer);
         }
     }
 
