@@ -2,195 +2,197 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// This class generates a cube mesh, gives it a raymarching material, and passes the contents of the SDF group into that material.
-/// </summary>
-[RequireComponent(typeof(MeshRenderer))]
-[RequireComponent(typeof(MeshFilter))]
-[ExecuteInEditMode]
-public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
+namespace IsoMesh
 {
-    #region Fields and Properties
-
-    private static class MaterialProperties
+    /// <summary>
+    /// This class generates a cube mesh, gives it a raymarching material, and passes the contents of the SDF group into that material.
+    /// </summary>
+    [RequireComponent(typeof(MeshRenderer))]
+    [RequireComponent(typeof(MeshFilter))]
+    [ExecuteInEditMode]
+    public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
     {
-        public static int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
+        #region Fields and Properties
 
-        public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
-        public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
-        
-        public static int Diffuse_Colour = Shader.PropertyToID("_DiffuseColour");
-        public static int Ambient_Colour = Shader.PropertyToID("_AmbientColour");
-        public static int GlossPower_Float = Shader.PropertyToID("_GlossPower");
-        public static int GlossMultiplier_Float = Shader.PropertyToID("_GlossMultiplier");
-    }
+        private static class MaterialProperties
+        {
+            public static int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
 
-    [SerializeField]
-    private Material m_material;
-    private Material m_materialInstance;
+            public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
+            public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
-    [SerializeField]
-    private SDFGroup m_group;
-    public SDFGroup Group => m_group;
+            public static int Diffuse_Colour = Shader.PropertyToID("_DiffuseColour");
+            public static int Ambient_Colour = Shader.PropertyToID("_AmbientColour");
+            public static int GlossPower_Float = Shader.PropertyToID("_GlossPower");
+            public static int GlossMultiplier_Float = Shader.PropertyToID("_GlossMultiplier");
+        }
 
-    [SerializeField]
-    [HideInInspector]
-    private MeshRenderer m_renderer;
-    public MeshRenderer Renderer => m_renderer;
+        [SerializeField]
+        private Material m_material;
+        private Material m_materialInstance;
 
-    [SerializeField]
-    [HideInInspector]
-    private MeshFilter m_filter;
+        [SerializeField]
+        private SDFGroup m_group;
+        public SDFGroup Group => m_group;
 
-    [SerializeField]
-    private Vector3 m_size = new Vector3(10f, 10f, 10f);
-    public Vector3 Size => m_size;
+        [SerializeField]
+        [HideInInspector]
+        private MeshRenderer m_renderer;
+        public MeshRenderer Renderer => m_renderer;
 
-    [SerializeField]
-    private Color m_diffuseColour = Color.red;
-    public Color DiffuseColour => m_diffuseColour;
+        [SerializeField]
+        [HideInInspector]
+        private MeshFilter m_filter;
 
-    [SerializeField]
-    private Color m_ambientColour = Color.black;
-    public Color AmbientColour => m_ambientColour;
+        [SerializeField]
+        private Vector3 m_size = new Vector3(10f, 10f, 10f);
+        public Vector3 Size => m_size;
 
-    [SerializeField]
-    private float m_glossPower = 0.1f;
-    public float GlossPower => m_glossPower;
+        [SerializeField]
+        private Color m_diffuseColour = Color.red;
+        public Color DiffuseColour => m_diffuseColour;
 
-    [SerializeField]
-    private float m_glossMultiplier = 0.5f;
-    public float GlossMultiplier => m_glossMultiplier;
+        [SerializeField]
+        private Color m_ambientColour = Color.black;
+        public Color AmbientColour => m_ambientColour;
 
-    private MaterialPropertyBlock m_propertyBlock;
+        [SerializeField]
+        private float m_glossPower = 0.1f;
+        public float GlossPower => m_glossPower;
 
-    #endregion
+        [SerializeField]
+        private float m_glossMultiplier = 0.5f;
+        public float GlossMultiplier => m_glossMultiplier;
 
-    #region MonoBehaviour Callbacks
+        private MaterialPropertyBlock m_propertyBlock;
 
-    private void Reset()
-    {
-        m_group = GetComponent<SDFGroup>();
+        #endregion
 
-        if (!m_group)
-            GetComponentInParent<SDFGroup>();
+        #region MonoBehaviour Callbacks
 
-        m_renderer = gameObject.GetOrAddComponent<MeshRenderer>();
-        m_filter = gameObject.GetOrAddComponent<MeshFilter>();
-        UpdateCubeMesh();
+        private void Reset()
+        {
+            m_group = GetComponent<SDFGroup>();
 
-        if (m_materialInstance == null)
-            m_materialInstance = new Material(m_material);
+            if (!m_group)
+                GetComponentInParent<SDFGroup>();
 
-        m_renderer.material = m_materialInstance;
-    }
+            m_renderer = gameObject.GetOrAddComponent<MeshRenderer>();
+            m_filter = gameObject.GetOrAddComponent<MeshFilter>();
+            UpdateCubeMesh();
 
-    private void OnEnable()
-    {
-        if (!m_group)
-            GetComponentInParent<SDFGroup>();
+            if (m_materialInstance == null)
+                m_materialInstance = new Material(m_material);
 
-        if (m_materialInstance == null)
-            m_materialInstance = new Material(m_material);
+            m_renderer.material = m_materialInstance;
+        }
 
-        OnVisualsChanged();
-    }
+        private void OnEnable()
+        {
+            if (!m_group)
+                GetComponentInParent<SDFGroup>();
 
-    private void OnDisable()
-    {
-        DestroyImmediate(m_materialInstance);
-    }
-    
-    #endregion
+            if (m_materialInstance == null)
+                m_materialInstance = new Material(m_material);
 
-    #region Setters
+            OnVisualsChanged();
+        }
 
-    public void SetSize(Vector3 size)
-    {
-        m_size = size;
-        UpdateCubeMesh();
-    }
+        private void OnDisable()
+        {
+            DestroyImmediate(m_materialInstance);
+        }
 
-    public void SetDiffuseColour(Color diffuseColour)
-    {
-        m_diffuseColour = diffuseColour;
-        OnVisualsChanged();
-    }
+        #endregion
 
-    public void SetAmbientColour(Color ambientColour)
-    {
-        m_ambientColour = ambientColour;
-        OnVisualsChanged();
-    }
+        #region Setters
 
-    public void SetGlossPower(float glossPower)
-    {
-        m_glossPower = glossPower;
-        OnVisualsChanged();
-    }
+        public void SetSize(Vector3 size)
+        {
+            m_size = size;
+            UpdateCubeMesh();
+        }
 
-    public void SetGlossMultiplier(float glossMultiplier)
-    {
-        m_glossMultiplier = glossMultiplier;
-        OnVisualsChanged();
-    }
+        public void SetDiffuseColour(Color diffuseColour)
+        {
+            m_diffuseColour = diffuseColour;
+            OnVisualsChanged();
+        }
 
-    #endregion
+        public void SetAmbientColour(Color ambientColour)
+        {
+            m_ambientColour = ambientColour;
+            OnVisualsChanged();
+        }
 
-    #region SDF Group Methods
+        public void SetGlossPower(float glossPower)
+        {
+            m_glossPower = glossPower;
+            OnVisualsChanged();
+        }
 
-    // this is more of a passive process, we don't need to 'run' anything as it's all done on the gpu side
-    public void Run() { }
+        public void SetGlossMultiplier(float glossMultiplier)
+        {
+            m_glossMultiplier = glossMultiplier;
+            OnVisualsChanged();
+        }
 
-    public void UpdateSettingsBuffer(ComputeBuffer computeBuffer)
-    {
-        if (m_propertyBlock == null)
-            m_propertyBlock = new MaterialPropertyBlock();
+        #endregion
 
-        m_propertyBlock.SetBuffer(MaterialProperties.Settings_StructuredBuffer, computeBuffer);
-        
-        m_renderer.SetPropertyBlock(m_propertyBlock);
-    }
-    
-    public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
-    {
-        if (m_propertyBlock == null)
-            m_propertyBlock = new MaterialPropertyBlock();
+        #region SDF Group Methods
 
-        if (computeBuffer != null && computeBuffer.IsValid())
-            m_propertyBlock.SetBuffer(MaterialProperties.SDFData_StructuredBuffer, computeBuffer);
-        
-        m_propertyBlock.SetInt(MaterialProperties.SDFDataCount_Int, count);
+        // this is more of a passive process, we don't need to 'run' anything as it's all done on the gpu side
+        public void Run() { }
 
-        m_renderer.SetPropertyBlock(m_propertyBlock);
-    }
-    
-    public void OnEmpty() => m_renderer.enabled = false;
+        public void UpdateSettingsBuffer(ComputeBuffer computeBuffer)
+        {
+            if (m_propertyBlock == null)
+                m_propertyBlock = new MaterialPropertyBlock();
 
-    public void OnNotEmpty() => m_renderer.enabled = true;
-    
-    #endregion
+            m_propertyBlock.SetBuffer(MaterialProperties.Settings_StructuredBuffer, computeBuffer);
 
-    #region Helper Methods
+            m_renderer.SetPropertyBlock(m_propertyBlock);
+        }
 
-    public void OnVisualsChanged()
-    {
-        if (m_propertyBlock == null)
-            m_propertyBlock = new MaterialPropertyBlock();
+        public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
+        {
+            if (m_propertyBlock == null)
+                m_propertyBlock = new MaterialPropertyBlock();
 
-        m_propertyBlock.SetColor(MaterialProperties.Diffuse_Colour, m_diffuseColour);
-        m_propertyBlock.SetColor(MaterialProperties.Ambient_Colour, m_ambientColour);
-        m_propertyBlock.SetFloat(MaterialProperties.GlossPower_Float, m_glossPower);
-        m_propertyBlock.SetFloat(MaterialProperties.GlossMultiplier_Float, m_glossMultiplier);
+            if (computeBuffer != null && computeBuffer.IsValid())
+                m_propertyBlock.SetBuffer(MaterialProperties.SDFData_StructuredBuffer, computeBuffer);
 
-        m_renderer.SetPropertyBlock(m_propertyBlock);
-    }
+            m_propertyBlock.SetInt(MaterialProperties.SDFDataCount_Int, count);
 
-    public void UpdateCubeMesh()
-    {
-        Vector3 size = m_size * 0.5f;
+            m_renderer.SetPropertyBlock(m_propertyBlock);
+        }
 
-        Vector3[] vertices = {
+        public void OnEmpty() => m_renderer.enabled = false;
+
+        public void OnNotEmpty() => m_renderer.enabled = true;
+
+        #endregion
+
+        #region Helper Methods
+
+        public void OnVisualsChanged()
+        {
+            if (m_propertyBlock == null)
+                m_propertyBlock = new MaterialPropertyBlock();
+
+            m_propertyBlock.SetColor(MaterialProperties.Diffuse_Colour, m_diffuseColour);
+            m_propertyBlock.SetColor(MaterialProperties.Ambient_Colour, m_ambientColour);
+            m_propertyBlock.SetFloat(MaterialProperties.GlossPower_Float, m_glossPower);
+            m_propertyBlock.SetFloat(MaterialProperties.GlossMultiplier_Float, m_glossMultiplier);
+
+            m_renderer.SetPropertyBlock(m_propertyBlock);
+        }
+
+        public void UpdateCubeMesh()
+        {
+            Vector3 size = m_size * 0.5f;
+
+            Vector3[] vertices = {
             new Vector3 (0, 0, 0),
             new Vector3 (1, 0, 0),
             new Vector3 (1, 1, 0),
@@ -201,10 +203,10 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
             new Vector3 (0, 0, 1),
         };
 
-        for (int i = 0; i < vertices.Length; i++)
-            vertices[i] = Utils.Remap(Vector3.zero, Vector3.one, -size, size, vertices[i]);
+            for (int i = 0; i < vertices.Length; i++)
+                vertices[i] = Utils.Remap(Vector3.zero, Vector3.one, -size, size, vertices[i]);
 
-        int[] triangles = {
+            int[] triangles = {
             0, 2, 1, //face front
 	        0, 3, 2,
             2, 3, 4, //face top
@@ -219,18 +221,19 @@ public class SDFGroupRaymarcher : MonoBehaviour, ISDFGroupComponent
 	        0, 1, 6
         };
 
-        Mesh mesh = new Mesh
-        {
-            vertices = vertices,
-            triangles = triangles
-        };
+            Mesh mesh = new Mesh
+            {
+                vertices = vertices,
+                triangles = triangles
+            };
 
-        mesh.Optimize();
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
+            mesh.Optimize();
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
 
-        m_filter.mesh = mesh;
+            m_filter.mesh = mesh;
+        }
+
+        #endregion
     }
-
-    #endregion
 }

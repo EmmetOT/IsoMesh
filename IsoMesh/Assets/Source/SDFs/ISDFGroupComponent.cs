@@ -1,18 +1,15 @@
 using UnityEngine;
 
-public interface ISDFGroupComponent
+namespace IsoMesh
 {
-    // update methods are only called when buffer is created or size changes
-    void UpdateSettingsBuffer(ComputeBuffer computeBuffer);
-    //void UpdateGlobalMeshDataBuffers(ComputeBuffer samplesBuffer, ComputeBuffer packedUVsBuffer);
+    public interface ISDFGroupComponent
+    {
+        void UpdateSettingsBuffer(ComputeBuffer computeBuffer);
+        void UpdateDataBuffer(ComputeBuffer computeBuffer, int count);
+        
+        void Run();
 
-    void UpdateDataBuffer(ComputeBuffer computeBuffer, int count);
-    
-    //void UpdatePrimitivesDataBuffer(ComputeBuffer computeBuffer, int count);
-    //void UpdateMeshMetadataBuffer(ComputeBuffer computeBuffer, int count);
-
-    void Run();
-
-    void OnEmpty();
-    void OnNotEmpty();
+        void OnEmpty();
+        void OnNotEmpty();
+    }
 }

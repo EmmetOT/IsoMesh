@@ -7,92 +7,95 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
-public class SDFMesh : SDFObject
+namespace IsoMesh
 {
-    public int ID => m_asset.GetInstanceID();
-
-    [SerializeField]
-    private SDFMeshAsset m_asset;
-    public SDFMeshAsset Asset => m_asset;
-
-    [SerializeField]
-    [UnityEngine.Serialization.FormerlySerializedAs("m_operation")]
-    protected SDFCombineType m_combineType;
-
-    [SerializeField]
-    protected bool m_flip = false;
-
-    protected override void TryRegister()
+    public class SDFMesh : SDFObject
     {
-        if (!m_asset)
-            return;
+        public int ID => m_asset.GetInstanceID();
 
-        base.TryRegister();
+        [SerializeField]
+        private SDFMeshAsset m_asset;
+        public SDFMeshAsset Asset => m_asset;
 
-        Group?.Register(this);
-    }
+        [SerializeField]
+        [UnityEngine.Serialization.FormerlySerializedAs("m_operation")]
+        protected SDFCombineType m_combineType;
 
-    protected override void TryDeregister()
-    {
-        if (!m_asset)
-            return;
+        [SerializeField]
+        protected bool m_flip = false;
 
-        base.TryRegister();
-
-        Group?.Deregister(this);
-    }
-
-    protected override void OnValidate()
-    {
-        base.OnValidate();
-
-        if (Group && !Group.IsRegistered(this) && m_asset)
-            TryRegister();
-    }
-    
-    public override SDFGPUData GetSDFGPUData(int sampleStartIndex, int uvStartIndex = -1)
-    {
-        return new SDFGPUData
+        protected override void TryRegister()
         {
-            Type = 0,
-            Data = new Vector4(m_asset.Size, sampleStartIndex, uvStartIndex),
-            Transform = transform.worldToLocalMatrix,
-            CombineType = (int)m_combineType,
-            Flip = m_flip ? -1 : 1,
-            MinBounds = m_asset.MinBounds,
-            MaxBounds = m_asset.MaxBounds
-        };
-    }
-    
-#if UNITY_EDITOR
-    private void OnDrawGizmosSelected()
-    {
-        if (!m_asset)
-            return;
+            if (!m_asset)
+                return;
 
-        Handles.color = Color.white;
-        Handles.matrix = transform.localToWorldMatrix;
-        Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
-        Handles.DrawWireCube((m_asset.MaxBounds + m_asset.MinBounds) * 0.5f, (m_asset.MaxBounds - m_asset.MinBounds));
-    }
+            base.TryRegister();
+
+            Group?.Register(this);
+        }
+
+        protected override void TryDeregister()
+        {
+            if (!m_asset)
+                return;
+
+            base.TryRegister();
+
+            Group?.Deregister(this);
+        }
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+
+            if (Group && !Group.IsRegistered(this) && m_asset)
+                TryRegister();
+        }
+
+        public override SDFGPUData GetSDFGPUData(int sampleStartIndex, int uvStartIndex = -1)
+        {
+            return new SDFGPUData
+            {
+                Type = 0,
+                Data = new Vector4(m_asset.Size, sampleStartIndex, uvStartIndex),
+                Transform = transform.worldToLocalMatrix,
+                CombineType = (int)m_combineType,
+                Flip = m_flip ? -1 : 1,
+                MinBounds = m_asset.MinBounds,
+                MaxBounds = m_asset.MaxBounds
+            };
+        }
+
+#if UNITY_EDITOR
+        private void OnDrawGizmosSelected()
+        {
+            if (!m_asset)
+                return;
+
+            Handles.color = Color.white;
+            Handles.matrix = transform.localToWorldMatrix;
+            Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
+            Handles.DrawWireCube((m_asset.MaxBounds + m_asset.MinBounds) * 0.5f, (m_asset.MaxBounds - m_asset.MinBounds));
+        }
 #endif
 
-    #region Create Menu Items
-    
-    [MenuItem("GameObject/SDFs/Mesh", false, priority: 2)]
-    private static void CreateSDFMesh(MenuCommand menuCommand)
-    {
-        GameObject selection = Selection.activeGameObject;
+        #region Create Menu Items
 
-        GameObject child = new GameObject("Mesh");
-        child.transform.SetParent(selection.transform);
-        child.transform.Reset();
+        [MenuItem("GameObject/SDFs/Mesh", false, priority: 2)]
+        private static void CreateSDFMesh(MenuCommand menuCommand)
+        {
+            GameObject selection = Selection.activeGameObject;
 
-        SDFMesh newMesh = child.AddComponent<SDFMesh>();
+            GameObject child = new GameObject("Mesh");
+            child.transform.SetParent(selection.transform);
+            child.transform.Reset();
 
-        Selection.activeGameObject = child;
+            SDFMesh newMesh = child.AddComponent<SDFMesh>();
+
+            Selection.activeGameObject = child;
+        }
+
+        #endregion
+
     }
-
-    #endregion
-
 }
