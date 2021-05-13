@@ -83,28 +83,5 @@ namespace IsoMesh.Editor
 
             m_setter.Update();
         }
-
-        private void OnSceneGUI()
-        {
-            Color col = m_sdfPrimitive.Operation == SDFCombineType.SmoothSubtract ? Color.red : Color.blue;
-            Vector4 data = m_serializedProperties.Data.vector4Value;
-            Handles.color = col;
-            Handles.matrix = m_sdfPrimitive.transform.localToWorldMatrix;
-
-            switch (m_sdfPrimitive.Type)
-            {
-                case SDFPrimitiveType.BoxFrame:
-                case SDFPrimitiveType.Cuboid:
-                    Handles.DrawWireCube(Vector3.zero, data.XYZ() * 2f);
-                    break;
-                //case SDFPrimitiveType.BoxFrame:
-                //    Handles.DrawWireCube(Vector3.zero, data.XYZ() * 2f);
-                //    break;
-                default:
-                    Handles.DrawWireDisc(Vector3.zero, Vector3.up, data.x);
-                    break;
-            }
-
-        }
     }
 }

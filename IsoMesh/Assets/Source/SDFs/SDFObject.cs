@@ -24,10 +24,12 @@ namespace IsoMesh
         }
 
         protected bool m_isDirty = false;
+        private bool m_isOrderDirty = false;
 
         private int m_lastSeenSiblingIndex = -1;
 
         public bool IsDirty => m_isDirty;
+        public bool IsOrderDirty => m_isOrderDirty;
 
         protected virtual void Awake() => TryRegister();
         protected virtual void Reset() => TryRegister();
@@ -62,6 +64,11 @@ namespace IsoMesh
             transform.hasChanged = false;
         }
 
+        public void SetOrderClean()
+        {
+            m_isOrderDirty = false;
+        }
+
         protected virtual void Update()
         {
             m_isDirty |= transform.hasChanged;
@@ -71,8 +78,8 @@ namespace IsoMesh
             if (siblingIndex != m_lastSeenSiblingIndex)
             {
                 if (m_lastSeenSiblingIndex != -1)
-                    m_isDirty = true;
-
+                    m_isOrderDirty = true;
+           
                 m_lastSeenSiblingIndex = siblingIndex;
             }
 

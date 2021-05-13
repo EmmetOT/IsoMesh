@@ -5,10 +5,11 @@
 #pragma kernel SurfaceNets_BuildIndexBuffer
 #pragma kernel SurfaceNets_AddIntermediateVerticesToIndexBuffer
 
-#pragma multi_compile __ ISOSURFACETYPE_SURFACE_NETS ISOSURFACETYPE_DUAL_CONTOURING
-#pragma multi_compile ___ EDGEINTERSECTIONTYPE_INTERPOLATION EDGEINTERSECTIONTYPE_BINARY_SEARCH
+#pragma multi_compile __ ISOSURFACETYPE_DUAL_CONTOURING/*ISOSURFACETYPE_SURFACE_NETS ISOSURFACETYPE_DUAL_CONTOURING*/
+#pragma multi_compile ___ EDGEINTERSECTIONTYPE_INTERPOLATION/* EDGEINTERSECTIONTYPE_BINARY_SEARCH*/
 #pragma multi_compile ____ APPLY_GRADIENT_DESCENT
 #pragma multi_compile ______ OVERRIDE_QEF_SETTINGS
+//#define ISOSURFACETYPE_DUAL_CONTOURING
 
 int _QEFSweeps;
 float _QEFPseudoInverseThreshold;
@@ -356,7 +357,8 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     
     sumNormal = normalize(sumNormal);
     
-    float dotWithMassPoint = max(0, dot(sumNormal, normalize(surfacePoint - massPoint)));
+    //float dotWithMassPoint = max(0, dot(sumNormal, normalize(surfacePoint - massPoint)));
+    float dotWithMassPoint = dot(sumNormal, normalize(surfacePoint - massPoint));
     
     float3 nudgeDir = sumNormal * _NudgeVerticesToAverageNormalScalar * dotWithMassPoint;
     float nudgeDirMag = min(length(nudgeDir), _NudgeMaxMagnitude);
@@ -377,7 +379,7 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     }
 #endif    
     
-        normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
+    normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
     
     return true;
 }
@@ -654,13 +656,17 @@ void SurfaceNets_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
     int index_2 = data.P_2;
     int index_3 = data.P_3;
     
-    float3 v_a = _VertexDataPoints_Structured[index_1].Vertex;
-    float3 v_b = _VertexDataPoints_Structured[index_2].Vertex;
-    float3 v_c = _VertexDataPoints_Structured[index_3].Vertex;
+    VertexData a = _VertexDataPoints_Structured[index_1];
+    VertexData b = _VertexDataPoints_Structured[index_2];
+    VertexData c = _VertexDataPoints_Structured[index_3];
     
-    float3 n_a = _VertexDataPoints_Structured[index_1].Normal;
-    float3 n_b = _VertexDataPoints_Structured[index_2].Normal;
-    float3 n_c = _VertexDataPoints_Structured[index_3].Normal;
+    float3 v_a = a.Vertex;
+    float3 v_b = b.Vertex;
+    float3 v_c = c.Vertex;
+    
+    float3 n_a = a.Normal;
+    float3 n_b = b.Normal;
+    float3 n_c = c.Normal;
     
     float3 crossNormal = normalize(cross(v_b - v_a, v_c - v_a));
 
@@ -703,6 +709,14 @@ void SurfaceNets_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
     _MeshTriangles[id.x * 3 + 0] = index_1;
     _MeshTriangles[id.x * 3 + 1] = index_2;
     _MeshTriangles[id.x * 3 + 2] = index_3;
+    
+    //a.Normal = normalize(lerp(a.Normal, normalize(b.Normal + c.Normal), 0.5));
+    //b.Normal = normalize(lerp(b.Normal, normalize(a.Normal + c.Normal), 0.5));
+    //c.Normal = normalize(lerp(c.Normal, normalize(a.Normal + b.Normal), 0.5));
+    
+    //_VertexDataPoints_Structured[index_1] = a;
+    //_VertexDataPoints_Structured[index_2] = b;
+    //_VertexDataPoints_Structured[index_3] = c;
     
     InterlockedMax(INTERMEDIATE_VERTEX_COUNT_DIV_64, ceil(INTERMEDIATE_VERTEX_COUNT / 64.0));
 }

@@ -1,7 +1,8 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using System.Runtime.InteropServices;
+using Unity.Collections;
+using UnityEngine.Rendering;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -92,7 +93,7 @@ namespace IsoMesh
 
         // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
         private readonly int[] m_counterArray = new int[] { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
-        private readonly int[] m_outputCounterArray = new int[] { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
+        private NativeArray<int> m_outputCounterArray;
         private readonly int[] m_proceduralArgsArray = new int[] { 0, 1, 0, 0, 0 };
         private float[] m_samplesDebugArray;
 
@@ -103,10 +104,10 @@ namespace IsoMesh
         private const int INTERMEDIATE_VERTEX_COUNTER = 12;
         private const int INTERMEDIATE_VERTEX_COUNTER_DIV_64 = 15;
 
-        public const string SurfaceNetsKeyword = "ISOSURFACETYPE_SURFACE_NETS";
+        //public const string SurfaceNetsKeyword = "ISOSURFACETYPE_SURFACE_NETS";
         public const string DualContouringKeyword = "ISOSURFACETYPE_DUAL_CONTOURING";
         public const string InterpolationKeyword = "EDGEINTERSECTIONTYPE_INTERPOLATION";
-        public const string BinarySearchKeyword = "EDGEINTERSECTIONTYPE_BINARY_SEARCH";
+        //public const string BinarySearchKeyword = "EDGEINTERSECTIONTYPE_BINARY_SEARCH";
         public const string ApplyGradientDescentKeyword = "APPLY_GRADIENT_DESCENT";
         public const string OverrideQEFSettingsKeyword = "OVERRIDE_QEF_SETTINGS";
 
@@ -125,10 +126,17 @@ namespace IsoMesh
         private ComputeBuffer m_counterBuffer;
         private ComputeBuffer m_proceduralArgsBuffer;
 
+        private NativeArray<Vector3> m_nativeArrayVertices;
+        private NativeArray<Vector3> m_nativeArrayNormals;
+        private NativeArray<Vector2> m_nativeArrayUVs;
+        private NativeArray<int> m_nativeArrayTriangles;
+
         private VertexData[] m_vertices;
         private TriangleData[] m_triangles;
         private CellData[] m_cells;
-        
+
+        private const int MESH_ARRAY_START_SIZE = 40000;
+
         [SerializeField]
         private ComputeShader m_computeShader;
         private ComputeShader ComputeShader
@@ -237,6 +245,9 @@ namespace IsoMesh
         public OutputMode OutputMode => m_outputMode;
 
         [SerializeField]
+        private bool m_isAsynchronous = false;
+
+        [SerializeField]
         private Material m_proceduralMaterial;
         private MaterialPropertyBlock m_propertyBlock;
 
@@ -335,7 +346,14 @@ namespace IsoMesh
         private bool m_initialized = false;
 
         public int SamplesPerSide => CellCount + 1;
-        public int TotalSampleCount => SamplesPerSide * SamplesPerSide * SamplesPerSide;
+        public int TotalSampleCount
+        {
+            get
+            {
+                int samplesPerSide = CellCount + 1;
+                return samplesPerSide * samplesPerSide * samplesPerSide;
+            }
+        }
 
         [SerializeField]
         private bool m_showGrid = false;
@@ -347,6 +365,9 @@ namespace IsoMesh
         // note that this doesn't always give the same result as "enabled" because OnEnable/OnDisable are
         // called during recompiles etc. you can basically read this bool as "is recompiling"
         private bool m_isEnabled = false;
+
+        // tracks the number of the most recent async call, to prevent earlier calls from overwriting the result of later calls
+        private uint m_currentAsyncCallNumber = 0;
 
         #endregion
 
@@ -377,7 +398,7 @@ namespace IsoMesh
         private void OnDisable()
         {
             m_isEnabled = false;
-            ReleaseBuffers();
+            ReleaseUnmanagedMemory();
 
 #if UNITY_EDITOR
             Undo.undoRedoPerformed -= OnUndo;
@@ -390,7 +411,7 @@ namespace IsoMesh
             {
                 m_initialized = false;
                 InitializeComputeShaderSettings();
-                Run();
+                m_group.RequestUpdate();
             }
         }
 
@@ -441,7 +462,7 @@ namespace IsoMesh
             }
         }
 
-        private void UpdateMesh()
+        public void UpdateMesh()
         {
             if (!m_initialized || !Group.IsReady || Group.IsEmpty)
                 return;
@@ -450,24 +471,125 @@ namespace IsoMesh
 
             if (m_outputMode == OutputMode.MeshFilter)
             {
-                GetMeshData(out Vector3[] vertices, out Vector3[] normals, out Vector2[] uvs, out int[] triangles);
+                if (m_isAsynchronous)
+                    StartCoroutine(Cr_GetMeshDataFromGPUAsync());
+                else
+                    GetMeshDataFromGPU();
+            }
+        }
 
-                if (MeshRenderer)
-                    MeshRenderer.enabled = vertices.Length > 0;
+        private void GetCounts(NativeArray<int> counter, out int vertexCount, out int triangleCount)
+        {
+            vertexCount = counter[VERTEX_COUNTER] + counter[INTERMEDIATE_VERTEX_COUNTER];
+            triangleCount = counter[TRIANGLE_COUNTER];
+        }
 
-                if (vertices.IsNullOrEmpty())
-                    return;
-                
-                m_mesh = new Mesh()
+        private void ReallocateNativeArrays(ref NativeArray<Vector3> vertices, ref NativeArray<Vector3> normals, ref NativeArray<Vector2> uvs, ref NativeArray<int> indices)
+        {
+            // to avoid lots of allocations here, i only create new arrays when
+            // 1) there's no array to begin with
+            // 2) the number of items to store is greater than the size of the current array
+            // 3) the size of the current array is greater than the size of the entire buffer
+            void ReallocateArrayIfNeeded<T>(ref NativeArray<T> array, int bufferCount) where T : struct
+            {
+                if (array == null || !array.IsCreated || array.Length < bufferCount)
                 {
-                    indexFormat = UnityEngine.Rendering.IndexFormat.UInt32,
-                    vertices = vertices,
-                    normals = normals,
-                    uv = uvs,
-                    triangles = triangles
-                };
+                    if (array != null && array.IsCreated)
+                        array.Dispose();
+                    
+                    array = new NativeArray<T>(bufferCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+                }
+            }
 
-                m_mesh.RecalculateBounds();
+            ReallocateArrayIfNeeded(ref vertices, m_meshVerticesBuffer.count);
+            ReallocateArrayIfNeeded(ref normals, m_meshNormalsBuffer.count);
+            ReallocateArrayIfNeeded(ref uvs, m_meshUVsBuffer.count);
+            ReallocateArrayIfNeeded(ref indices, m_meshTrianglesBuffer.count);
+        }
+
+        private void GetMeshDataFromGPU()
+        {
+            AsyncGPUReadbackRequest counterRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_outputCounterArray, m_counterBuffer);
+            counterRequest.WaitForCompletion();
+            
+            GetCounts(m_outputCounterArray, out int vertexCount, out int triangleCount);
+
+            ReallocateNativeArrays(ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
+
+            AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer);
+            AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer);
+            AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer);
+            AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer);
+
+            AsyncGPUReadback.WaitAllRequests();
+
+            SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals, m_nativeArrayUVs, m_nativeArrayTriangles, vertexCount, triangleCount);
+        }
+
+        private IEnumerator Cr_GetMeshDataFromGPUAsync()
+        {
+            uint asyncCallNumber = ++m_currentAsyncCallNumber;
+
+            NativeArray<int> counter = new NativeArray<int>(m_counterBuffer.count, Allocator.Persistent);
+            
+            AsyncGPUReadbackRequest counterRequest = AsyncGPUReadback.RequestIntoNativeArray(ref counter, m_counterBuffer);
+
+            yield return new WaitUntil(() => counterRequest.done);
+
+            GetCounts(counter, out int vertexCount, out int triangleCount);
+
+            counter.Dispose();
+
+            NativeArray<Vector3> vertices = new NativeArray<Vector3>(m_meshVerticesBuffer.count, Allocator.Persistent);
+            NativeArray<Vector3> normals = new NativeArray<Vector3>(m_meshNormalsBuffer.count, Allocator.Persistent);
+            NativeArray<Vector2> uvs = new NativeArray<Vector2>(m_meshUVsBuffer.count, Allocator.Persistent);
+            NativeArray<int> indices = new NativeArray<int>(m_meshTrianglesBuffer.count, Allocator.Persistent);
+
+            AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref vertices, m_meshVerticesBuffer);
+            AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref normals, m_meshNormalsBuffer);
+            AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref uvs, m_meshUVsBuffer);
+            AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref indices, m_meshTrianglesBuffer);
+            
+            yield return new WaitUntil(() => vertexRequest.done && normalRequest.done && uvRequest.done && triangleRequest.done);
+            
+            if (asyncCallNumber == m_currentAsyncCallNumber)
+                SetMeshData(vertices, normals, uvs, indices, vertexCount, triangleCount);
+
+            vertices.Dispose();
+            normals.Dispose();
+            uvs.Dispose();
+            indices.Dispose();
+        }
+
+        private void SetMeshData(NativeArray<Vector3> vertices, NativeArray<Vector3> normals, NativeArray<Vector2> uvs, NativeArray<int> indices, int vertexCount, int triangleCount)
+        {
+            if (vertices == null || vertices.Length == 0)
+            {
+                if (MeshRenderer)
+                    MeshRenderer.enabled = false;
+            }
+            else
+            {
+                if (MeshRenderer)
+                    MeshRenderer.enabled = true;
+
+                if (m_mesh == null)
+                {
+                    m_mesh = new Mesh()
+                    {
+                        indexFormat = IndexFormat.UInt32
+                    };
+                }
+                else
+                {
+                    m_mesh.Clear();
+                }
+
+                m_mesh.SetVertices(vertices, 0, vertexCount);
+                m_mesh.SetNormals(normals, 0, vertexCount);
+                m_mesh.SetUVs(0, uvs, 0, vertexCount);
+                m_mesh.SetIndices(indices, 0, triangleCount * 3, MeshTopology.Triangles, 0, calculateBounds: true);
+
                 MeshFilter.mesh = m_mesh;
 
                 if (MeshCollider)
@@ -503,7 +625,7 @@ namespace IsoMesh
             if (m_initialized || !m_isEnabled)
                 return;
 
-            ReleaseBuffers();
+            ReleaseUnmanagedMemory();
 
             bool wasAutoUpdating = m_autoUpdate;
             m_autoUpdate = false;
@@ -517,6 +639,8 @@ namespace IsoMesh
             ResendKeywords();
 
             m_kernels = new Kernels(ComputeShader);
+            
+            m_outputCounterArray = new NativeArray<int>(m_counterArray.Length, Allocator.Persistent);
 
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
             m_counterBuffer = new ComputeBuffer(m_counterArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
@@ -553,7 +677,7 @@ namespace IsoMesh
         /// </summary>
         private void CreateVariableBuffers()
         {
-            int countCubed = SamplesPerSide * SamplesPerSide * SamplesPerSide;
+            int countCubed = TotalSampleCount;
 
             m_computeShaderInstance.SetInt(Properties.PointsPerSide_Int, SamplesPerSide);
 
@@ -579,7 +703,7 @@ namespace IsoMesh
             m_triangleDataBuffer = new ComputeBuffer(countCubed, TriangleData.Stride, ComputeBufferType.Append);
 
             m_meshVerticesBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
-            m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);//
+            m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
             m_meshTrianglesBuffer = new ComputeBuffer(countCubed * 3, sizeof(int), ComputeBufferType.Structured);
             m_meshUVsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 2, ComputeBufferType.Structured);
 
@@ -625,10 +749,25 @@ namespace IsoMesh
         }
 
         /// <summary>
-        /// Buffers are unmanaged and Unity will cry if we don't do this.
+        /// Buffers and NativeArrays are unmanaged and Unity will cry if we don't do this.
         /// </summary>
-        private void ReleaseBuffers()
+        private void ReleaseUnmanagedMemory()
         {
+            if (m_outputCounterArray != null && m_outputCounterArray.IsCreated)
+                m_outputCounterArray.Dispose();
+
+            if (m_nativeArrayVertices != null && m_nativeArrayVertices.IsCreated)
+                m_nativeArrayVertices.Dispose();
+
+            if (m_nativeArrayNormals != null && m_nativeArrayNormals.IsCreated)
+                m_nativeArrayNormals.Dispose();
+
+            if (m_nativeArrayUVs != null && m_nativeArrayUVs.IsCreated)
+                m_nativeArrayUVs.Dispose();
+
+            if (m_nativeArrayTriangles != null && m_nativeArrayTriangles.IsCreated)
+                m_nativeArrayTriangles.Dispose();
+
             m_counterBuffer?.Dispose();
             m_proceduralArgsBuffer?.Dispose();
 
@@ -718,11 +857,6 @@ namespace IsoMesh
             OnIsosurfaceExtractionTypeChanged();
             OnEdgeIntersectionTypeChanged();
             OnApplyGradientDescentChanged();
-
-            //if (m_outputMode == OutputMode.Procedural)
-            //    m_computeShaderInstance.EnableKeyword(ApplyTransformKeyword);
-            //else
-            //    m_computeShaderInstance.DisableKeyword(ApplyTransformKeyword);
         }
 
         /// <summary>
@@ -733,9 +867,9 @@ namespace IsoMesh
             // this only happens when unity is recompiling. this is annoying and hacky but it works.
             if (m_counterBuffer == null || !m_counterBuffer.IsValid())
                 return;
-            
+
             ResetCounters();
-            
+
             DispatchMap();
             DispatchGenerateVertices();
             DispatchNumberVertices();
@@ -750,7 +884,7 @@ namespace IsoMesh
         private void ResetCounters()
         {
             m_counterBuffer.SetData(m_counterArray);
-            
+
             m_vertexDataBuffer?.SetCounterValue(0);
             m_triangleDataBuffer?.SetCounterValue(0);
 
@@ -801,34 +935,11 @@ namespace IsoMesh
             m_computeShaderInstance.DispatchIndirect(m_kernels.AddIntermediateVerticesToIndexBuffer, m_counterBuffer, INTERMEDIATE_VERTEX_COUNTER_DIV_64 * sizeof(int));
         }
 
-        /// <summary>
-        /// Returns the computed mesh data to the CPU.
-        /// </summary>
-        private void GetMeshData(out Vector3[] vertices, out Vector3[] normals, out Vector2[] uvs, out int[] triangles)
-        {
-            // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-            m_counterBuffer.GetData(m_outputCounterArray);
-            int vertexCount = m_outputCounterArray[VERTEX_COUNTER] + m_outputCounterArray[INTERMEDIATE_VERTEX_COUNTER];
-            int triangleCount = m_outputCounterArray[TRIANGLE_COUNTER];
-            
-            vertices = new Vector3[vertexCount];
-            m_meshVerticesBuffer.GetData(vertices);
-
-            normals = new Vector3[vertexCount];
-            m_meshNormalsBuffer.GetData(normals);
-
-            uvs = new Vector2[vertexCount];
-            m_meshUVsBuffer.GetData(uvs);
-
-            triangles = new int[triangleCount * 3];
-            m_meshTrianglesBuffer.GetData(triangles);
-        }
-        
         private void SendTransformToGPU()
         {
             if (!m_initialized || !m_isEnabled)
                 return;
-            
+
             m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, transform.localToWorldMatrix);
         }
 
@@ -925,15 +1036,9 @@ namespace IsoMesh
                 return;
 
             if (m_isosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
-            {
-                m_computeShaderInstance.DisableKeyword(SurfaceNetsKeyword);
                 m_computeShaderInstance.EnableKeyword(DualContouringKeyword);
-            }
             else
-            {
                 m_computeShaderInstance.DisableKeyword(DualContouringKeyword);
-                m_computeShaderInstance.EnableKeyword(SurfaceNetsKeyword);
-            }
 
             if (m_autoUpdate)
                 UpdateMesh();
@@ -945,16 +1050,9 @@ namespace IsoMesh
                 return;
 
             if (m_edgeIntersectionType == EdgeIntersectionType.BinarySearch)
-            {
-                m_computeShaderInstance.EnableKeyword(BinarySearchKeyword);
                 m_computeShaderInstance.DisableKeyword(InterpolationKeyword);
-            }
             else
-            {
                 m_computeShaderInstance.EnableKeyword(InterpolationKeyword);
-                m_computeShaderInstance.DisableKeyword(BinarySearchKeyword);
-
-            }
 
             if (m_autoUpdate)
                 UpdateMesh();
@@ -1010,7 +1108,7 @@ namespace IsoMesh
             if (m_autoUpdate)
                 UpdateMesh();
         }
-        
+
         public void SetOutputMode(OutputMode outputMode)
         {
             m_outputMode = outputMode;

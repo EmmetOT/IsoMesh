@@ -53,6 +53,30 @@ namespace IsoMesh
             };
         }
 
+#if UNITY_EDITOR
+        private void OnDrawGizmos()
+        {
+            Color col = Operation == SDFCombineType.SmoothSubtract ? Color.red : Color.blue;
+            Handles.color = col;
+            Handles.matrix = transform.localToWorldMatrix;
+
+            switch (Type)
+            {
+                case SDFPrimitiveType.BoxFrame:
+                case SDFPrimitiveType.Cuboid:
+                    Handles.DrawWireCube(Vector3.zero, m_data.XYZ() * 2f);
+                    break;
+                //case SDFPrimitiveType.BoxFrame:
+                //    Handles.DrawWireCube(Vector3.zero, data.XYZ() * 2f);
+                //    break;
+                default:
+                    Handles.DrawWireDisc(Vector3.zero, Vector3.up, m_data.x);
+                    break;
+            }
+        }
+
+#endif
+
         #region Create Menu Items
 
 #if UNITY_EDITOR

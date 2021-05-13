@@ -96,6 +96,7 @@ namespace IsoMesh
 
         private static bool m_isGlobalMeshDataDirty = true;
         private bool m_isLocalDataDirty = true;
+        private bool m_isLocalDataOrderDirty = true;
 
         #endregion
 
@@ -126,6 +127,7 @@ namespace IsoMesh
 
             m_sdfObjects.Add(sdfObject);
             m_isLocalDataDirty = true;
+            m_isLocalDataOrderDirty = true;
 
             // this is almost certainly overkill, but i like the kind of guaranteed stability
             ClearNulls(m_sdfObjects);
@@ -157,6 +159,7 @@ namespace IsoMesh
             }
 
             m_isLocalDataDirty = true;
+            m_isLocalDataOrderDirty = true;
 
             // this is almost certainly overkill
             ClearNulls(m_sdfObjects);
@@ -184,6 +187,7 @@ namespace IsoMesh
             m_isEnabled = true;
             m_isGlobalMeshDataDirty = true;
             m_isLocalDataDirty = true;
+            m_isLocalDataOrderDirty = true;
 
             RequestUpdate(onlySendBufferOnChange: false);
             m_forceUpdateNextFrame = true;
@@ -193,6 +197,7 @@ namespace IsoMesh
         {
             m_isGlobalMeshDataDirty = true;
             m_isLocalDataDirty = true;
+            m_isLocalDataOrderDirty = true;
 
             RequestUpdate(onlySendBufferOnChange: false);
             m_forceUpdateNextFrame = true;
@@ -233,12 +238,16 @@ namespace IsoMesh
             bool nullHit = false;
             for (int i = 0; i < m_sdfObjects.Count; i++)
             {
-                bool isNull = !m_sdfObjects[i];
+                SDFObject sdfObject = m_sdfObjects[i];
+                bool isNull = !sdfObject;
 
                 nullHit |= isNull;
 
                 if (!isNull)
-                    m_isLocalDataDirty |= m_sdfObjects[i].IsDirty;
+                {
+                    m_isLocalDataDirty |= sdfObject.IsDirty;
+                    m_isLocalDataOrderDirty |= sdfObject.IsOrderDirty;
+                }
             }
 
             if (nullHit)
@@ -246,7 +255,13 @@ namespace IsoMesh
 
             bool changed = false;
 
-            if (m_forceUpdateNextFrame || m_isGlobalMeshDataDirty || m_isLocalDataDirty || transform.hasChanged)
+            if (m_isLocalDataOrderDirty)
+            {
+                ReorderObjects();
+                changed = true;
+            }
+
+            if (changed || m_forceUpdateNextFrame || m_isGlobalMeshDataDirty || m_isLocalDataDirty || transform.hasChanged)
             {
                 changed = true;
                 RebuildData();
@@ -382,6 +397,27 @@ namespace IsoMesh
         }
 
         /// <summary>
+        /// Sort the list of sdf objects by sibling index, which ensures that this list is always in the same
+        /// order as is shown in the unity hierarchy. This is important because some of the sdf operations are ordered
+        /// </summary>
+        private void ReorderObjects()
+        {
+            m_dataSiblingIndices.Clear();
+
+            ClearNulls(m_sdfObjects);
+
+            for (int i = 0; i < m_sdfObjects.Count; i++)
+            {
+                m_dataSiblingIndices.Add(m_sdfObjects[i].transform.GetSiblingIndex());
+                m_sdfObjects[i].SetOrderClean();
+            }
+
+            m_sdfObjects = m_sdfObjects.OrderBy(d => m_dataSiblingIndices[m_sdfObjects.IndexOf(d)]).ToList();
+
+            m_isLocalDataOrderDirty = false;
+        }
+
+        /// <summary>
         /// Repopulate the data relating to SDF primitives (spheres, toruses, cuboids etc) and SDF meshes (which point to where in the list of sample and uv data they begin, and how large they are)
         /// </summary>
         /// <param name="onlySendBufferOnChange">Whether to invoke the components and inform them the buffer has changed. This is only really necessary when the size changes.</param>
@@ -397,7 +433,6 @@ namespace IsoMesh
             // memorize the size of the array before clearing it, for later comparison
             int previousCount = m_data.Count;
             m_data.Clear();
-            m_dataSiblingIndices.Clear();
 
             // add all the sdf objects
             for (int i = 0; i < m_sdfObjects.Count; i++)
@@ -424,12 +459,7 @@ namespace IsoMesh
                 }
 
                 m_data.Add(sdfObject.GetSDFGPUData(meshStartIndex, uvStartIndex));
-                m_dataSiblingIndices.Add(sdfObject.transform.GetSiblingIndex());
             }
-
-            // sort this list by sibling index, which ensures that this list is always in the same
-            // order as is shown in the unity hierarchy. this is important because some of the sdf operations are ordered
-            m_data = m_data.OrderBy(d => m_dataSiblingIndices[m_data.IndexOf(d)]).ToList();
 
             bool sendBuffer = !onlySendBufferOnChange;
 
@@ -527,5 +557,43 @@ namespace IsoMesh
         }
 
         #endregion
+    }
+
+    public struct SDFHierarchyPositionComparer : IComparer<SDFGPUData>
+    {
+        private List<int> m_positions;
+        private List<SDFGPUData> m_list;
+
+        public SDFHierarchyPositionComparer(List<SDFGPUData> list, List<int> positions)
+        {
+            m_list = list;
+            m_positions = positions;
+        }
+
+        public int Compare(SDFGPUData x, SDFGPUData y)
+        {
+            int xIndex = -1;
+            int yIndex = -1;
+
+            for (int i = 0; i < m_list.Count; i++)
+            {
+                if (m_list[i].Equals(x))
+                    xIndex = i;
+
+                if (m_list[i].Equals(y))
+                    yIndex = i;
+
+                if (xIndex != -1 && yIndex != -1)
+                    break;
+            }
+
+            if (xIndex == -1 || yIndex == -1)
+                return 0;
+
+            int xPosition = m_positions[xIndex];
+            int yPosition = m_positions[yIndex];
+
+            return xPosition.CompareTo(yPosition);
+        }
     }
 }

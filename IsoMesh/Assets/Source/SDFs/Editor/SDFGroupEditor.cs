@@ -57,7 +57,7 @@ namespace IsoMesh.Editor
                             m_sdfGroup.SetSmoothing(val);
 
                         if (this.DrawFloatField(Labels.NormalSmoothing, m_serializedProperties.NormalSmoothing, out val, min: SDFGroup.MIN_SMOOTHING))
-                            m_sdfGroup.SetSmoothing(val);
+                            m_sdfGroup.SetNormalSmoothing(val);
                     }
                 }
             }

@@ -13,6 +13,7 @@ namespace IsoMesh.Editor
             public static GUIContent SDFGroup = new GUIContent("SDF Group", "An SDF group is a collection of sdf primitives, meshes, and operations which mutually interact.");
             public static GUIContent AutoUpdate = new GUIContent("Auto Update", "Whether the mesh will automatically be regenerated when any setting, on this component or the SDF Group, changes.");
             public static GUIContent OutputMode = new GUIContent("Output Mode", "This mesh can be passed directly to a material as a triangle and index buffer in 'Procedural' mode, or transfered to the CPU and sent to a MeshFilter in 'Mesh' mode.");
+            public static GUIContent IsAsynchronous = new GUIContent("Is Asynchronous", "If true, the main thread won't wait for the GPU to finish generating the mesh.");
             public static GUIContent ProceduralMaterial = new GUIContent("Procedural Material", "Mesh data will be passed directly to this material as vertex and index buffers.");
             public static GUIContent VoxelSettings = new GUIContent("Voxel Settings", "These settings control the size/amount/density of voxels.");
             public static GUIContent CellSizeMode = new GUIContent("Cell Size Mode", "Fixed = the number of cells doesn't change. Density = the size of the volume doesn't change.");
@@ -45,6 +46,7 @@ namespace IsoMesh.Editor
             public SerializedProperty SDFGroup { get; }
             public SerializedProperty AutoUpdate { get; }
             public SerializedProperty OutputMode { get; }
+            public SerializedProperty IsAsynchronous { get; }
             public SerializedProperty ProceduralMaterial { get; }
             public SerializedProperty CellSizeMode { get; }
             public SerializedProperty CellSize { get; }
@@ -72,6 +74,7 @@ namespace IsoMesh.Editor
                 SDFGroup = serializedObject.FindProperty("m_group");
                 AutoUpdate = serializedObject.FindProperty("m_autoUpdate");
                 OutputMode = serializedObject.FindProperty("m_outputMode");
+                IsAsynchronous = serializedObject.FindProperty("m_isAsynchronous");
                 ProceduralMaterial = serializedObject.FindProperty("m_proceduralMaterial");
                 CellSizeMode = serializedObject.FindProperty("m_cellSizeMode");
                 CellSize = serializedObject.FindProperty("m_cellSize");
@@ -117,6 +120,11 @@ namespace IsoMesh.Editor
 
             serializedObject.DrawScript();
 
+            if (GUILayout.Button("Update Mesh"))
+            {
+                m_sdfGroupMeshGen.UpdateMesh();
+            }
+
             GUI.enabled = false;
             EditorGUILayout.PropertyField(m_serializedProperties.ComputeShader, Labels.ComputeShader);
             GUI.enabled = true;
@@ -131,6 +139,8 @@ namespace IsoMesh.Editor
 
             if (m_sdfGroupMeshGen.OutputMode == OutputMode.Procedural)
                 m_setter.DrawProperty(Labels.ProceduralMaterial, m_serializedProperties.ProceduralMaterial);
+            else if (m_sdfGroupMeshGen.OutputMode == OutputMode.MeshFilter)
+                m_setter.DrawProperty(Labels.IsAsynchronous, m_serializedProperties.IsAsynchronous);
 
             if (m_isVoxelSettingsOpen = EditorGUILayout.Foldout(m_isVoxelSettingsOpen, Labels.VoxelSettings, true))
             {

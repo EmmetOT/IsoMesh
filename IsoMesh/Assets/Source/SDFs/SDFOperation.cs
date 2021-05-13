@@ -34,12 +34,23 @@ namespace IsoMesh
 
         public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
         {
+            Vector4 data = m_data;
+
+            if (Type == SDFOperationType.Elongate)
+                data = new Vector4(Mathf.Max(0, data.x), Mathf.Max(0, data.y), Mathf.Max(0, data.z), Mathf.Max(0, data.w));
+
             return new SDFGPUData
             {
                 Type = -(int)Type - 1,
                 Transform = transform.worldToLocalMatrix,
-                Data = Type == SDFOperationType.Elongate ? m_data.Max0() : m_data
+                Data = data
             };
+        }
+
+        public void SetData(Vector4 data)
+        {
+            m_data = data;
+            SetDirty();
         }
 
         #region Create Menu Items

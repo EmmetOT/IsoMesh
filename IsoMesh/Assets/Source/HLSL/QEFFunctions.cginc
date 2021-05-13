@@ -6,8 +6,8 @@
 #define SVD_NUM_SWEEPS _QEFSweeps
 #define PSUEDO_INVERSE_THRESHOLD _QEFPseudoInverseThreshold
 #else
-#define SVD_NUM_SWEEPS 5
-#define PSUEDO_INVERSE_THRESHOLD 1.0//1.0e-2f
+#define SVD_NUM_SWEEPS 1
+#define PSUEDO_INVERSE_THRESHOLD 0.1
 #endif
 
 typedef float mat3x3[3][3];

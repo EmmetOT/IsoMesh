@@ -53,3 +53,5 @@ Thumbs.db
 
 # But keep the demo packages themselves.
 [Ii]so[Mm]esh/[Aa]ssets/Plugins/Sirenix/Demos/*.unitypackage 
+Ignore
+/IsoMesh/Assets/Ignore.meta
