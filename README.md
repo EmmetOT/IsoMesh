@@ -91,11 +91,11 @@ It works surprisingly well, even when moving the sdfs around!
 ## Roadmap and Notes
 
 * ~~I want to be able to add physics to the generated meshes. In theory this should be as simple as adding a MeshCollider and Rigidbody to them, but Unity probably won't play well with these high-poly non-convex meshes, so I may need to split them into many convex meshes.~~
-* ~~I intend to add more sdf operations which aren't tied to specific sdf objects, so I can stretch or bend the entire space.
+* ~~I intend to add more sdf operations which aren't tied to specific sdf objects, so I can stretch or bend the entire space.~~
 * I'd like to figure out how to get the generated 'UV field' to play nicely with seams on SDFMeshes. Currently I just clamp the interpolated UVs if I detect too big a jump between two neighbouring UV samples.
 * None of this stuff is particularly cheap on the GPU. I made no special effort to avoid branching and I could probably use less kernels in the mesh generation process.
-* ~~Undo is not fully supported in custom editors yet.
-* ~~Some items, especially SDF meshes, don't always cope nicely with all the different transitions Unity goes to, like entering play mode, or recompiling. I've spent a lot of time improving stability in this regard but it's not yet 100%.
+* ~~Undo is not fully supported in custom editors yet.~~
+* ~~Some items, especially SDF meshes, don't always cope nicely with all the different transitions Unity goes to, like entering play mode, or recompiling. I've spent a lot of time improving stability in this regard but it's not yet 100%.~~
 * I don't currently use any sort of adaptive octree approach. I consider this a "nice to have."
 * I might make a component to automate the "chunking" process, basically just currently positioning the distinct SDFGroupMeshGenerator components, disabling occluded ones, spawning new ones, etc.
 
