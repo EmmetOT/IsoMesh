@@ -80,6 +80,14 @@ You can also directly visualize the UVs and iteration count.
 
 ![isomesh7](https://user-images.githubusercontent.com/18707147/115975420-8745b980-a55c-11eb-9a6f-416848f5cc9e.png)
 
+## Physics
+
+I also include a very fun sample scene showing how you might add physical interaction. Unfortunately, Unity doesn't allow for custom colliders at this time, nor does it allow for non-static concave meshes. Which leaves me pretty limited. However, Unity does allow for convex mesh colliders and even static concave mesh colliders. Creating mesh colliders is very expensive for large meshes though. This led me to experiment with generating very small colliders only around Rigidbodies, at fixed distance intervals.
+
+![blobbyBricks9](https://user-images.githubusercontent.com/18707147/118203358-caa49100-b453-11eb-9d3a-a5af4fff5cca.gif)
+
+It works surprisingly well, even when moving the sdfs around!
+
 ## Roadmap and Notes
 
 * I want to be able to add physics to the generated meshes. In theory this should be as simple as adding a MeshCollider and Rigidbody to them, but Unity probably won't play well with these high-poly non-convex meshes, so I may need to split them into many convex meshes.
