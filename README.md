@@ -44,7 +44,7 @@ Isosurface extraction here refers to converting an isosurface back into a triang
 
 As I say above, in order to use the isosurface extraction just add an SDFGroupMeshGenerator under an SDFGroup. The number of options on this component is almost excessive, but don't let that get you down, they all have tooltips which do some explaining, and if you've done your homework they should feel fairly familiar:
 
-![isomesh3](https://user-images.githubusercontent.com/18707147/115974664-1a2f2580-a556-11eb-83f0-c51895dd9d52.png)
+![isomesh3](https://user-images.githubusercontent.com/18707147/118203187-713c6200-b453-11eb-9438-f105f98f4226.png)
 
 Normal settings are handy to control the appearance of the mesh surface. 'Max angle tolerance' will generate new mesh vertices when normals are too distinct from the normal of their triangle. I like to keep this value around 40 degrees, as it retains sharp edges while keeping smooth curves. 'Visual smoothing' changes the distance between samples when generating mesh normals via central differences.
 
@@ -92,6 +92,11 @@ You can also directly visualize the UVs and iteration count.
 * I might make a component to automate the "chunking" process, basically just currently positioning the distinct SDFGroupMeshGenerator components, disabling occluded ones, spawning new ones, etc.
 
 ![isomesh9](https://user-images.githubusercontent.com/18707147/115975715-03410100-a55f-11eb-8c41-3b983217ba64.gif)
+
+
+## Known Issues
+
+* Asynchronous mode is not currently recommended, because while it works, the NativeArrays created in the coroutine aren't disposed of when the coroutine is interrupted, for example by going from edit mode to play mode.
 
 ## Useful References and Sources
 
