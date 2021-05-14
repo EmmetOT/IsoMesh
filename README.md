@@ -44,7 +44,7 @@ Isosurface extraction here refers to converting an isosurface back into a triang
 
 As I say above, in order to use the isosurface extraction just add an SDFGroupMeshGenerator under an SDFGroup. The number of options on this component is almost excessive, but don't let that get you down, they all have tooltips which do some explaining, and if you've done your homework they should feel fairly familiar:
 
-![isomesh3](https://user-images.githubusercontent.com/18707147/115974664-1a2f2580-a556-11eb-83f0-c51895dd9d52.png)
+![isomesh3](https://user-images.githubusercontent.com/18707147/118203187-713c6200-b453-11eb-9438-f105f98f4226.png)
 
 Normal settings are handy to control the appearance of the mesh surface. 'Max angle tolerance' will generate new mesh vertices when normals are too distinct from the normal of their triangle. I like to keep this value around 40 degrees, as it retains sharp edges while keeping smooth curves. 'Visual smoothing' changes the distance between samples when generating mesh normals via central differences.
 
@@ -80,18 +80,31 @@ You can also directly visualize the UVs and iteration count.
 
 ![isomesh7](https://user-images.githubusercontent.com/18707147/115975420-8745b980-a55c-11eb-9a6f-416848f5cc9e.png)
 
+## Physics
+
+I also include a very fun sample scene showing how you might add physical interaction. Unfortunately, Unity doesn't allow for custom colliders at this time, nor does it allow for non-static concave meshes. Which leaves me pretty limited. However, Unity does allow for convex mesh colliders and even static concave mesh colliders. Creating mesh colliders is very expensive for large meshes though. This led me to experiment with generating very small colliders only around Rigidbodies, at fixed distance intervals.
+
+![blobbyBricks9](https://user-images.githubusercontent.com/18707147/118203358-caa49100-b453-11eb-9d3a-a5af4fff5cca.gif)
+
+It works surprisingly well, even when moving the sdfs around!
+
 ## Roadmap and Notes
 
-* I want to be able to add physics to the generated meshes. In theory this should be as simple as adding a MeshCollider and Rigidbody to them, but Unity probably won't play well with these high-poly non-convex meshes, so I may need to split them into many convex meshes.
-* I intend to add more sdf operations which aren't tied to specific sdf objects, so I can stretch or bend the entire space.
+* ~~I want to be able to add physics to the generated meshes. In theory this should be as simple as adding a MeshCollider and Rigidbody to them, but Unity probably won't play well with these high-poly non-convex meshes, so I may need to split them into many convex meshes.~~
+* ~~I intend to add more sdf operations which aren't tied to specific sdf objects, so I can stretch or bend the entire space.~~
 * I'd like to figure out how to get the generated 'UV field' to play nicely with seams on SDFMeshes. Currently I just clamp the interpolated UVs if I detect too big a jump between two neighbouring UV samples.
 * None of this stuff is particularly cheap on the GPU. I made no special effort to avoid branching and I could probably use less kernels in the mesh generation process.
-* Undo is not fully supported in custom editors yet.
-* Some items, especially SDF meshes, don't always cope nicely with all the different transitions Unity goes to, like entering play mode, or recompiling. I've spent a lot of time improving stability in this regard but it's not yet 100%.
+* ~~Undo is not fully supported in custom editors yet.~~
+* ~~Some items, especially SDF meshes, don't always cope nicely with all the different transitions Unity goes to, like entering play mode, or recompiling. I've spent a lot of time improving stability in this regard but it's not yet 100%.~~
 * I don't currently use any sort of adaptive octree approach. I consider this a "nice to have."
 * I might make a component to automate the "chunking" process, basically just currently positioning the distinct SDFGroupMeshGenerator components, disabling occluded ones, spawning new ones, etc.
 
 ![isomesh9](https://user-images.githubusercontent.com/18707147/115975715-03410100-a55f-11eb-8c41-3b983217ba64.gif)
+
+
+## Known Issues
+
+* Asynchronous mode is not currently recommended, because while it works, the NativeArrays created in the coroutine aren't disposed of when the coroutine is interrupted, for example by going from edit mode to play mode.
 
 ## Useful References and Sources
 
