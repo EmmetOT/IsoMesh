@@ -120,11 +120,6 @@ namespace IsoMesh.Editor
 
             serializedObject.DrawScript();
 
-            if (GUILayout.Button("Update Mesh"))
-            {
-                m_sdfGroupMeshGen.UpdateMesh();
-            }
-
             GUI.enabled = false;
             EditorGUILayout.PropertyField(m_serializedProperties.ComputeShader, Labels.ComputeShader);
             GUI.enabled = true;

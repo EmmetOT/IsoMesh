@@ -484,21 +484,21 @@ namespace IsoMesh
             vertexCount = counter[VERTEX_COUNTER] + counter[INTERMEDIATE_VERTEX_COUNTER];
             triangleCount = counter[TRIANGLE_COUNTER];
         }
-        
+
         private void ReallocateNativeArrays(int vertexCount, int triangleCount, ref NativeArray<Vector3> vertices, ref NativeArray<Vector3> normals, ref NativeArray<Vector2> uvs, ref NativeArray<int> indices)
         {
             // to avoid lots of allocations here, i only create new arrays when
             // 1) there's no array to begin with
             // 2) the number of items to store is greater than the size of the current array
             // 3) the size of the current array is greater than the size of the entire buffer
-            void ReallocateArrayIfNeeded<T>(ref NativeArray<T> array, int bufferCount) where T : struct
+            void ReallocateArrayIfNeeded<T>(ref NativeArray<T> array, int count) where T : struct
             {
-                if (array == null || !array.IsCreated || array.Length < bufferCount)
+                if (array == null || !array.IsCreated || array.Length < count)
                 {
                     if (array != null && array.IsCreated)
                         array.Dispose();
 
-                    array = new NativeArray<T>(bufferCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+                    array = new NativeArray<T>(count, Allocator.Persistent, NativeArrayOptions.ClearMemory);
                 }
             }
 
@@ -507,22 +507,25 @@ namespace IsoMesh
             ReallocateArrayIfNeeded(ref uvs, vertexCount);
             ReallocateArrayIfNeeded(ref indices, triangleCount * 3);
         }
-        
+
         private void GetMeshDataFromGPU()
         {
             AsyncGPUReadbackRequest counterRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_outputCounterNativeArray, m_counterBuffer);
             counterRequest.WaitForCompletion();
-            
+
             GetCounts(m_outputCounterNativeArray, out int vertexCount, out int triangleCount);
 
-            ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
+            if (triangleCount > 0)
+            {
+                ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
+                
+                AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, m_nativeArrayVertices.Length * sizeof(float) * 3, 0);
+                AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, m_nativeArrayNormals.Length * sizeof(float) * 3, 0);
+                AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, m_nativeArrayUVs.Length * sizeof(float) * 2, 0);
+                AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, m_nativeArrayTriangles.Length * sizeof(int), 0);
 
-            AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, m_nativeArrayVertices.Length * sizeof(float) * 3, 0);
-            AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, m_nativeArrayNormals.Length * sizeof(float) * 3, 0);
-            AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, m_nativeArrayUVs.Length * sizeof(float) * 2, 0);
-            AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, m_nativeArrayTriangles.Length * sizeof(int), 0);
-
-            AsyncGPUReadback.WaitAllRequests();
+                AsyncGPUReadback.WaitAllRequests();
+            }
 
             SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals, m_nativeArrayUVs, m_nativeArrayTriangles, vertexCount, triangleCount);
         }
@@ -531,6 +534,8 @@ namespace IsoMesh
         {
             uint asyncCallNumber = ++m_currentAsyncCallNumber;
 
+            NativeLeakDetection.Mode = NativeLeakDetectionMode.EnabledWithStackTrace;
+
             NativeArray<int> counter = new NativeArray<int>(m_counterBuffer.count, Allocator.Persistent);
             
             AsyncGPUReadbackRequest counterRequest = AsyncGPUReadback.RequestIntoNativeArray(ref counter, m_counterBuffer);
@@ -538,41 +543,58 @@ namespace IsoMesh
             yield return new WaitUntil(() => counterRequest.done);
 
             GetCounts(counter, out int vertexCount, out int triangleCount);
-
+            
             counter.Dispose();
 
-            NativeArray<Vector3> vertices = new NativeArray<Vector3>(m_meshVerticesBuffer.count, Allocator.Persistent);
-            NativeArray<Vector3> normals = new NativeArray<Vector3>(m_meshNormalsBuffer.count, Allocator.Persistent);
-            NativeArray<Vector2> uvs = new NativeArray<Vector2>(m_meshUVsBuffer.count, Allocator.Persistent);
-            NativeArray<int> indices = new NativeArray<int>(m_meshTrianglesBuffer.count, Allocator.Persistent);
+            if (triangleCount > 0)
+            {
+                NativeArray<Vector3> vertices = new NativeArray<Vector3>(m_meshVerticesBuffer.count, Allocator.Persistent);
+                NativeArray<Vector3> normals = new NativeArray<Vector3>(m_meshNormalsBuffer.count, Allocator.Persistent);
+                NativeArray<Vector2> uvs = new NativeArray<Vector2>(m_meshUVsBuffer.count, Allocator.Persistent);
+                NativeArray<int> indices = new NativeArray<int>(m_meshTrianglesBuffer.count, Allocator.Persistent);
+                
+                AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref vertices, m_meshVerticesBuffer);
+                AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref normals, m_meshNormalsBuffer);
+                AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref uvs, m_meshUVsBuffer);
+                AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref indices, m_meshTrianglesBuffer);
 
-            AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref vertices, m_meshVerticesBuffer);
-            AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref normals, m_meshNormalsBuffer);
-            AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref uvs, m_meshUVsBuffer);
-            AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref indices, m_meshTrianglesBuffer);
-            
-            yield return new WaitUntil(() => vertexRequest.done && normalRequest.done && uvRequest.done && triangleRequest.done);
-            
-            if (asyncCallNumber == m_currentAsyncCallNumber)
-                SetMeshData(vertices, normals, uvs, indices, vertexCount, triangleCount);
+                yield return new WaitUntil(() => vertexRequest.done && normalRequest.done && uvRequest.done && triangleRequest.done);
 
-            vertices.Dispose();
-            normals.Dispose();
-            uvs.Dispose();
-            indices.Dispose();
+                if (asyncCallNumber == m_currentAsyncCallNumber)
+                    SetMeshData(vertices, normals, uvs, indices, vertexCount, triangleCount);
+                
+                vertices.Dispose();
+                normals.Dispose();
+                uvs.Dispose();
+                indices.Dispose();
+            }
+            else
+            {
+                if (MeshRenderer)
+                    MeshRenderer.enabled = false;
+
+                if (MeshCollider)
+                    MeshCollider.enabled = false;
+            }
         }
 
         private void SetMeshData(NativeArray<Vector3> vertices, NativeArray<Vector3> normals, NativeArray<Vector2> uvs, NativeArray<int> indices, int vertexCount, int triangleCount)
         {
-            if (vertices == null || vertices.Length == 0)
+            if (triangleCount == 0)
             {
                 if (MeshRenderer)
                     MeshRenderer.enabled = false;
+
+                if (MeshCollider)
+                    MeshCollider.enabled = false;
             }
             else
             {
                 if (MeshRenderer)
                     MeshRenderer.enabled = true;
+
+                if (MeshCollider)
+                    MeshCollider.enabled = true;
 
                 if (m_mesh == null)
                 {
@@ -597,7 +619,7 @@ namespace IsoMesh
                     MeshCollider.sharedMesh = m_mesh;
             }
         }
-        
+
         private bool TryGetOrCreateMeshGameObject()
         {
             if (m_outputMode != OutputMode.MeshFilter)
@@ -640,7 +662,7 @@ namespace IsoMesh
             ResendKeywords();
 
             m_kernels = new Kernels(ComputeShader);
-            
+
             m_outputCounterNativeArray = new NativeArray<int>(m_counterArray.Length, Allocator.Persistent);
 
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
@@ -768,7 +790,7 @@ namespace IsoMesh
 
             if (m_nativeArrayTriangles != null && m_nativeArrayTriangles.IsCreated)
                 m_nativeArrayTriangles.Dispose();
-
+            
             m_counterBuffer?.Dispose();
             m_proceduralArgsBuffer?.Dispose();
 
