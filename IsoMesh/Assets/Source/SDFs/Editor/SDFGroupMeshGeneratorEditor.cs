@@ -37,7 +37,6 @@ namespace IsoMesh.Editor
             public static GUIContent NudgeMaxMagnitude = new GUIContent("Nudge Max", "Limits the magnitude of the nudge vector. (See above.)");
             public static GUIContent DebugSettings = new GUIContent("Debug Settings", "Controls for gizmos.");
             public static GUIContent ShowGrid = new GUIContent("Show Grid", "Show the voxel grid as a gizmo. Not recommended for high voxel counts.");
-            //public static GUIContent ShowSamplePoints = new GUIContent("Show Sample Points", "Show the samples of the underlying sdf as a gizmo. Not recommended for high voxel counts.");
         }
 
         private class SerializedProperties
@@ -133,9 +132,13 @@ namespace IsoMesh.Editor
             m_setter.DrawEnumSetting<OutputMode>(Labels.OutputMode, m_serializedProperties.OutputMode, onValueChangedCallback: m_sdfGroupMeshGen.OnOutputModeChanged);
 
             if (m_sdfGroupMeshGen.OutputMode == OutputMode.Procedural)
+            {
                 m_setter.DrawProperty(Labels.ProceduralMaterial, m_serializedProperties.ProceduralMaterial);
+            }
             else if (m_sdfGroupMeshGen.OutputMode == OutputMode.MeshFilter)
+            {
                 m_setter.DrawProperty(Labels.IsAsynchronous, m_serializedProperties.IsAsynchronous);
+            }
 
             if (m_isVoxelSettingsOpen = EditorGUILayout.Foldout(m_isVoxelSettingsOpen, Labels.VoxelSettings, true))
             {
