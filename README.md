@@ -7,7 +7,7 @@ I decided to share my code here because it represents a lot of trial and error a
 
 ![isomesh2](https://user-images.githubusercontent.com/18707147/115974497-2070d200-a555-11eb-85cd-cfffed99c771.png)
 
-The project is currently being developed and tested on Unity 2020.3.0f1.
+The project is currently being developed and tested on Unity 2021.2.0a16. [(Why are you using an alpha version of Unity?)](#place-2)
 
 ## Signed Distance Fields
 A signed distance field, or 'SDF', is a function which takes a position in space and returns the distance from that point to the surface of an object. The distance is negative if the point is inside the object. These functions can be used to represent all sorts of groovy shapes, and are in some sense 'volumetric', as opposed to the more traditional polygon-based way of representing geometry.
@@ -56,11 +56,6 @@ Gradient descent is another iterative improvement which simply moves the vertice
 
 The 'nudge' stuff is an experimental solution for reducing artefacts on mesh edges and corners. It moves the mesh vertices a tiny bit in the direction of the sum of the normals at the voxel edge intersections. By itself, this simply 'inflates' the mesh. But alongside gradient descent, it can produce tasty sharp edges, but introduces artefacts of its own. I recommend keeping this value very low if you do use it.
 
-### A note on 'output mode'
-You may notice there is an option to switch between 'Procedural' and 'Mesh Filter' output modes. This changes how the mesh data is handed over to Unity for rendering. The 'Mesh Filter' mode simply drags the mesh data back onto the CPU and passes it in to a Mesh Filter component. Procedural mode is waaaay faster - using Unity's DrawProceduralIndirect to keep the data GPU-side. However, you will need a material which is capable of rendering geometry passed in via ComputeBuffers. This project is in URP, which makes it a bit of a pain to hand-write shaders, [and Unity's ShaderGraph doesn't currently support this.](https://forum.unity.com/threads/graphicsbuffer-mesh-vertices-and-compute-shaders.777548/) In my own project, I use Amplify Shader Editor. While I obviously can't include that, I do include the custom node: 'AmplifyNode.hlsl'. Hopefully the feature comes to ShaderGraph soon!
-
-I'll probably want to make these generated meshes interact physically in the future anyway, which will unfortunately require the meshes on the CPU side too.
-
 ## Raymarching
 If you're familiar with SDFs, you're familiar with raymarching. They very often go hand-in-hand. [Raymarching will also be very familiar to you if you ever go on ShaderToy.](https://www.shadertoy.com/results?query=raymarch) Again I recommend checking out Inigo Quilez for an in-depth explanation, but raymarching is basically an iterative sort of 'pseudo-raytracing' algorithm for rendering complex surfaces like SDFs.
 
@@ -101,10 +96,10 @@ It works surprisingly well, even when moving the sdfs around!
 
 ![isomesh9](https://user-images.githubusercontent.com/18707147/115975715-03410100-a55f-11eb-8c41-3b983217ba64.gif)
 
+## Why are you using an alpha version of Unity?
+You may notice there is an option to switch between 'Procedural' and 'Mesh Filter' output modes. This changes how the mesh data is handed over to Unity for rendering. The 'Mesh Filter' mode simply drags the mesh data back onto the CPU and passes it in to a Mesh Filter component. Procedural mode is waaaay faster - using Unity's DrawProceduralIndirect to keep the data GPU-side. However, you will need a material which is capable of rendering geometry passed in via ComputeBuffers. This project is in URP, which makes it a bit of a pain to hand-write shaders, [and Unity didn't add a VertexID node until ShaderGraph 12, which is only supported by Unity 2021.2.](https://portal.productboard.com/unity/1-unity-platform-rendering-visual-effects/c/258-shader-graph-vertex-id-instance-id-and-eyeid-nodes)
 
-## Known Issues
-
-* Asynchronous mode is not currently recommended, because while it works, the NativeArrays created in the coroutine aren't disposed of when the coroutine is interrupted, for example by going from edit mode to play mode.
+If you want to try this out, but don't want to use an alpha version of Unity, this stuff is the only difference - you can import this into unity 2020.3, which I was previously working in, and it should be fine except for the procedural output mode and the corresponding shader graph. If you have the amplify shader editor, I've included an amplify custom node class which should let you do the same thing!
 
 ## Useful References and Sources
 
