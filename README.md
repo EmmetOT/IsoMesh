@@ -7,7 +7,7 @@ I decided to share my code here because it represents a lot of trial and error a
 
 ![isomesh2](https://user-images.githubusercontent.com/18707147/115974497-2070d200-a555-11eb-85cd-cfffed99c771.png)
 
-The project is currently being developed and tested on Unity 2021.2.0a16. [(Why are you using an alpha version of Unity?)](## Why are you using an alpha version of Unity?)
+The project is currently being developed and tested on Unity 2021.2.0a16. [(Why are you using an alpha version of Unity?)](https://github.com/EmmetOT/IsoMesh#why-are-you-using-an-alpha-version-of-unity)
 
 ## Signed Distance Fields
 A signed distance field, or 'SDF', is a function which takes a position in space and returns the distance from that point to the surface of an object. The distance is negative if the point is inside the object. These functions can be used to represent all sorts of groovy shapes, and are in some sense 'volumetric', as opposed to the more traditional polygon-based way of representing geometry.
