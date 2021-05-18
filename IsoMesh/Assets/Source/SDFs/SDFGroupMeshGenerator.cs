@@ -52,6 +52,7 @@ namespace IsoMesh
             public static readonly int VertexData_StructuredBuffer = Shader.PropertyToID("_VertexDataPoints_Structured");
             public static readonly int TriangleData_StructuredBuffer = Shader.PropertyToID("_TriangleDataPoints_Structured");
 
+            public static readonly int MeshTransform_Matrix4x4 = Shader.PropertyToID("_MeshTransform");
             public static readonly int MeshVertices_RWBuffer = Shader.PropertyToID("_MeshVertices");
             public static readonly int MeshNormals_RWBuffer = Shader.PropertyToID("_MeshNormals");
             public static readonly int MeshTriangles_RWBuffer = Shader.PropertyToID("_MeshTriangles");
@@ -96,7 +97,6 @@ namespace IsoMesh
         private readonly int[] m_counterArray = new int[] { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
         private NativeArray<int> m_outputCounterNativeArray;
         private readonly int[] m_proceduralArgsArray = new int[] { 0, 1, 0, 0, 0 };
-        private float[] m_samplesDebugArray;
 
         private const int VERTEX_COUNTER = 0;
         private const int TRIANGLE_COUNTER = 3;
@@ -105,15 +105,12 @@ namespace IsoMesh
         private const int INTERMEDIATE_VERTEX_COUNTER = 12;
         private const int INTERMEDIATE_VERTEX_COUNTER_DIV_64 = 15;
 
-        //public const string SurfaceNetsKeyword = "ISOSURFACETYPE_SURFACE_NETS";
         public const string DualContouringKeyword = "ISOSURFACETYPE_DUAL_CONTOURING";
         public const string InterpolationKeyword = "EDGEINTERSECTIONTYPE_INTERPOLATION";
-        //public const string BinarySearchKeyword = "EDGEINTERSECTIONTYPE_BINARY_SEARCH";
         public const string ApplyGradientDescentKeyword = "APPLY_GRADIENT_DESCENT";
         public const string OverrideQEFSettingsKeyword = "OVERRIDE_QEF_SETTINGS";
 
         private const string ComputeShaderResourceName = "Compute_IsoSurfaceExtraction";
-        private const string DefaultMeshMaterial = "SDF_DefaultMaterial";
 
         private ComputeBuffer m_samplesBuffer;
         private ComputeBuffer m_cellDataBuffer;
@@ -134,9 +131,6 @@ namespace IsoMesh
 
         private VertexData[] m_vertices;
         private TriangleData[] m_triangles;
-        private CellData[] m_cells;
-
-        private const int MESH_ARRAY_START_SIZE = 40000;
 
         [SerializeField]
         private ComputeShader m_computeShader;
@@ -152,8 +146,7 @@ namespace IsoMesh
                 return m_computeShader;
             }
         }
-
-
+        
         private ComputeShader m_computeShaderInstance;
 
         [SerializeField]
@@ -177,11 +170,9 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        [HideInInspector]
         private GameObject m_meshFilterGameObject;
 
         [SerializeField]
-        [HideInInspector]
         private MeshFilter m_meshFilter;
         private MeshFilter MeshFilter
         {
@@ -201,7 +192,6 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        [HideInInspector]
         private MeshCollider m_meshCollider;
         private MeshCollider MeshCollider
         {
@@ -218,7 +208,6 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        [HideInInspector]
         private MeshRenderer m_meshRenderer;
         public MeshRenderer MeshRenderer
         {
@@ -238,135 +227,25 @@ namespace IsoMesh
 
         private Bounds m_bounds;
 
-        [SerializeField]
-        private bool m_autoUpdate = true;
-
-        [SerializeField]
-        private OutputMode m_outputMode = OutputMode.Procedural;
-        public OutputMode OutputMode => m_outputMode;
-
-        [SerializeField]
-        private bool m_isAsynchronous = false;
-
-        [SerializeField]
-        private Material m_proceduralMaterial;
         private MaterialPropertyBlock m_propertyBlock;
 
         [SerializeField]
-        private CellSizeMode m_cellSizeMode = CellSizeMode.Fixed;
-        public CellSizeMode CellSizeMode => m_cellSizeMode;
+        private MainSettings m_mainSettings = new MainSettings();
 
         [SerializeField]
-        private float m_cellSize = 0.2f;
-
-        public float CellSize
-        {
-            get
-            {
-                if (m_cellSizeMode == CellSizeMode.Density)
-                    return m_volumeSize / m_cellDensity;
-
-                return m_cellSize;
-            }
-        }
+        private VoxelSettings m_voxelSettings = new VoxelSettings();
 
         [SerializeField]
-        private int m_cellCount = 50;
-
-        public int CellCount
-        {
-            get
-            {
-                if (m_cellSizeMode == CellSizeMode.Density)
-                    return Mathf.FloorToInt(m_volumeSize * m_cellDensity);
-
-                return m_cellCount;
-            }
-        }
-
-        [SerializeField]
-        private float m_volumeSize = 5f;
-        public float VolumeSize => m_volumeSize;
-
-        [SerializeField]
-        private float m_cellDensity = 1f;
-        public float CellDensity => m_cellDensity;
-
-        [SerializeField]
-        private float m_maxAngleTolerance = 20f;
-        public float MaxAngleTolerance => m_maxAngleTolerance;
-
-        [SerializeField]
-        private float m_visualNormalSmoothing = 1e-5f;
-        public float VisualNormalSmoothing => m_visualNormalSmoothing;
-
-        [SerializeField]
-        private IsosurfaceExtractionType m_isosurfaceExtractionType = IsosurfaceExtractionType.SurfaceNets;
-        public IsosurfaceExtractionType IsosurfaceExtractionType => m_isosurfaceExtractionType;
-
-        [SerializeField]
-        private float m_constrainToCellUnits = 0f;
-        public float ConstrainToCellUnits => m_constrainToCellUnits;
-
-        [SerializeField]
-        private bool m_overrideQEFSettings = false;
-        public bool OverrideQEFSettings => m_overrideQEFSettings;
-
-        [SerializeField]
-        private int m_qefSweeps = 5;
-        public int QefSweeps => m_qefSweeps;
-
-        [SerializeField]
-        private float m_qefPseudoInverseThreshold = 1e-2f;
-        public float QefPseudoInverseThreshold => m_qefPseudoInverseThreshold;
-
-        [SerializeField]
-        private EdgeIntersectionType m_edgeIntersectionType = EdgeIntersectionType.Interpolation;
-        public EdgeIntersectionType EdgeIntersectionType => m_edgeIntersectionType;
-
-        [SerializeField]
-        private int m_binarySearchIterations = 5;
-        public int BinarySearchIterations => m_binarySearchIterations;
-
-        [SerializeField]
-        private bool m_applyGradientDescent = false;
-        public bool ApplyGradientDescent => m_applyGradientDescent;
-
-        [SerializeField]
-        private int m_gradientDescentIterations = 10;
-        public int GradientDescentIterations => m_gradientDescentIterations;
-
-        [SerializeField]
-        private float m_nudgeVerticesToAverageNormalScalar = 0.01f;
-        public float NudgeVerticesToAverageNormalScalar => m_nudgeVerticesToAverageNormalScalar;
-
-        [SerializeField]
-        private float m_nudgeMaxMagnitude = 1f;
-        public float NudgeMaxMagnitude => m_nudgeMaxMagnitude;
+        private AlgorithmSettings m_algorithmSettings = new AlgorithmSettings();
 
         private bool m_initialized = false;
-
-        public int SamplesPerSide => CellCount + 1;
-        public int TotalSampleCount
-        {
-            get
-            {
-                int samplesPerSide = CellCount + 1;
-                return samplesPerSide * samplesPerSide * samplesPerSide;
-            }
-        }
 
         [SerializeField]
         private bool m_showGrid = false;
         public bool ShowGrid => m_showGrid;
-
-        [SerializeField]
-        [HideInInspector]
-        // this bool is toggled off/on whenever the Unity callbacks OnEnable/OnDisable are called.
-        // note that this doesn't always give the same result as "enabled" because OnEnable/OnDisable are
-        // called during recompiles etc. you can basically read this bool as "is recompiling"
-        private bool m_isEnabled = false;
         
+        private bool m_isEnabled = false;
+
         #endregion
 
         #region MonoBehaviour Callbacks
@@ -381,7 +260,7 @@ namespace IsoMesh
         {
             m_isEnabled = true;
             m_initialized = false;
-
+            
             if (Group.IsReady)
             {
                 InitializeComputeShaderSettings();
@@ -419,8 +298,11 @@ namespace IsoMesh
 
         private void Update()
         {
-            if (transform.hasChanged && Group.IsReady && !Group.IsEmpty && Group.IsRunning)
+            if ((transform.hasChanged || (TryGetOrCreateMeshGameObject() && m_meshFilterGameObject.transform.hasChanged)) && Group.IsReady && !Group.IsEmpty && Group.IsRunning)
             {
+                if (TryGetOrCreateMeshGameObject())
+                    m_meshFilterGameObject.transform.hasChanged = false;
+
                 SendTransformToGPU();
                 UpdateMesh();
             }
@@ -436,8 +318,8 @@ namespace IsoMesh
             if (!m_initialized || !Group.IsReady || Group.IsEmpty)
                 return;
 
-            if (m_outputMode == OutputMode.Procedural)
-                Graphics.DrawProceduralIndirect(m_proceduralMaterial, m_bounds, MeshTopology.Triangles, m_proceduralArgsBuffer, properties: m_propertyBlock);
+            if (m_mainSettings.OutputMode == OutputMode.Procedural)
+                Graphics.DrawProceduralIndirect(m_mainSettings.ProceduralMaterial, m_bounds, MeshTopology.Triangles, m_proceduralArgsBuffer, properties: m_propertyBlock);
         }
 
         public void UpdateMesh()
@@ -445,9 +327,9 @@ namespace IsoMesh
             if (!m_initialized || !Group.IsReady || Group.IsEmpty)
                 return;
 
-            if (m_outputMode == OutputMode.MeshFilter)
+            if (m_mainSettings.OutputMode == OutputMode.MeshFilter)
             {
-                if (m_isAsynchronous)
+                if (m_mainSettings.IsAsynchronous)
                 {
                     if (!m_isCoroutineRunning)
                         StartCoroutine(Cr_GetMeshDataFromGPUAsync());
@@ -501,7 +383,7 @@ namespace IsoMesh
             if (triangleCount > 0)
             {
                 ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
-                
+
                 int vertexRequestSize = Mathf.Min(m_nativeArrayVertices.Length, m_meshVerticesBuffer.count, vertexCount);
                 int triangleRequestSize = Mathf.Min(m_nativeArrayTriangles.Length, m_meshTrianglesBuffer.count, triangleCount * 3);
 
@@ -610,17 +492,24 @@ namespace IsoMesh
 
         private bool TryGetOrCreateMeshGameObject()
         {
-            if (m_outputMode != OutputMode.MeshFilter)
+            if (m_mainSettings.OutputMode != OutputMode.MeshFilter)
                 return false;
 
             if (m_meshFilterGameObject)
                 return true;
 
-            m_meshFilterGameObject = new GameObject("Mesh");
+            m_meshFilterGameObject = new GameObject(name + " Generated Mesh");
             m_meshFilterGameObject.transform.SetParent(transform);
             m_meshFilterGameObject.transform.Reset();
 
             return true;
+        }
+
+        public void DereferenceMeshObject()
+        {
+            m_meshFilterGameObject = null;
+            m_meshFilter = null;
+            m_meshRenderer = null;
         }
 
         /// <summary>
@@ -636,6 +525,8 @@ namespace IsoMesh
 
         #region Internal Compute Shader Stuff + Other Boring Boilerplate Methods
 
+        private bool m_isInitializing = false;
+
         /// <summary>
         /// Do all the initial setup. This function should only be called once per 'session' because it does a lot of
         /// setup for buffers of constant size.
@@ -643,13 +534,19 @@ namespace IsoMesh
         private void InitializeComputeShaderSettings()
         {
             if (m_initialized || !m_isEnabled)
+            {
+                Debug.Log("Returning before initializing.");
+                Debug.Log("m_initialized = " + m_initialized);
+                Debug.Log("m_isEnabled = " + m_isEnabled);
                 return;
+            }
 
             ReleaseUnmanagedMemory();
 
-            bool wasAutoUpdating = m_autoUpdate;
-            m_autoUpdate = false;
+            //bool wasAutoUpdating = m_mainSettings.AutoUpdate;
+            //m_autoUpdate = false;
 
+            m_isInitializing = true;
             m_initialized = true;
 
             m_computeShaderInstance = Instantiate(ComputeShader);
@@ -659,14 +556,6 @@ namespace IsoMesh
             ResendKeywords();
 
             m_kernels = new Kernels(ComputeShader);
-
-            if (!m_isAsynchronous)
-            {
-                if (m_outputCounterNativeArray != null && m_outputCounterNativeArray.IsCreated)
-                    m_outputCounterNativeArray.Dispose();
-
-                m_outputCounterNativeArray = new NativeArray<int>(m_counterArray.Length, Allocator.Persistent);
-            }
 
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
             m_counterBuffer = new ComputeBuffer(m_counterArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
@@ -695,7 +584,8 @@ namespace IsoMesh
 
             // set autoUpdate back to its value before this function was called.
             // we temporarily disable autoupdate during this function
-            m_autoUpdate = wasAutoUpdating;
+            //m_autoUpdate = wasAutoUpdating;
+            m_isInitializing = false;
         }
 
         /// <summary>
@@ -703,13 +593,15 @@ namespace IsoMesh
         /// </summary>
         private void CreateVariableBuffers()
         {
-            int countCubed = TotalSampleCount;
+            int countCubed = m_voxelSettings.TotalSampleCount;
 
-            m_computeShaderInstance.SetInt(Properties.PointsPerSide_Int, SamplesPerSide);
+            m_computeShaderInstance.SetInt(Properties.PointsPerSide_Int, m_voxelSettings.SamplesPerSide);
 
-            m_vertices = new VertexData[countCubed];
-            m_triangles = new TriangleData[countCubed];
-            m_cells = new CellData[countCubed];
+            if (m_vertices.IsNullOrEmpty() || m_vertices.Length != countCubed)
+                m_vertices = new VertexData[countCubed];
+
+            if (m_triangles.IsNullOrEmpty() || m_triangles.Length != countCubed)
+                m_triangles = new TriangleData[countCubed];
 
             m_samplesBuffer?.Dispose();
             m_cellDataBuffer?.Dispose();
@@ -735,9 +627,11 @@ namespace IsoMesh
 
             m_intermediateVertexBuffer = new ComputeBuffer(countCubed * 3, NewVertexData.Stride, ComputeBufferType.Append);
 
-            if (m_proceduralMaterial)
+            if (m_mainSettings.ProceduralMaterial)
             {
-                m_propertyBlock = new MaterialPropertyBlock();
+                if (m_propertyBlock == null)
+                    m_propertyBlock = new MaterialPropertyBlock();
+
                 m_propertyBlock.SetBuffer(Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
                 m_propertyBlock.SetBuffer(Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
                 m_propertyBlock.SetBuffer(Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
@@ -764,10 +658,7 @@ namespace IsoMesh
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.IntermediateVertexBuffer_StructuredBuffer, m_intermediateVertexBuffer);
 
-            m_bounds = new Bounds
-            {
-                extents = Vector3.one * CellCount * CellSize
-            };
+            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
             ResetCounters();
             SetVertexData();
@@ -779,6 +670,9 @@ namespace IsoMesh
         /// </summary>
         private void ReleaseUnmanagedMemory()
         {
+            StopAllCoroutines();
+            m_isCoroutineRunning = false;
+
             m_counterBuffer?.Dispose();
             m_proceduralArgsBuffer?.Dispose();
 
@@ -865,15 +759,12 @@ namespace IsoMesh
             if (m_counterBuffer == null || !m_counterBuffer.IsValid())
                 return;
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
             {
                 if (!m_initialized)
                     InitializeComputeShaderSettings();
 
-                if (m_outputMode == OutputMode.MeshFilter)
-                    UpdateMesh();
-                else
-                    Dispatch();
+                UpdateMesh();
             }
         }
 
@@ -898,7 +789,7 @@ namespace IsoMesh
                 return;
 
             ResetCounters();
-
+            
             DispatchMap();
             DispatchGenerateVertices();
             DispatchNumberVertices();
@@ -929,15 +820,15 @@ namespace IsoMesh
         private void DispatchMap()
         {
             UpdateMapKernels(Properties.Settings_StructuredBuffer, Group.SettingsBuffer);
-
+            
             m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Map, out uint x, out uint y, out uint z);
-            m_computeShaderInstance.Dispatch(m_kernels.Map, Mathf.CeilToInt(SamplesPerSide / (float)x), Mathf.CeilToInt(SamplesPerSide / (float)y), Mathf.CeilToInt(SamplesPerSide / (float)z));
+            m_computeShaderInstance.Dispatch(m_kernels.Map, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
         }
 
         private void DispatchGenerateVertices()
         {
             m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.GenerateVertices, out uint x, out uint y, out uint z);
-            m_computeShaderInstance.Dispatch(m_kernels.GenerateVertices, Mathf.CeilToInt(SamplesPerSide / (float)x), Mathf.CeilToInt(SamplesPerSide / (float)y), Mathf.CeilToInt(SamplesPerSide / (float)z));
+            m_computeShaderInstance.Dispatch(m_kernels.GenerateVertices, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
         }
 
         private void DispatchNumberVertices()
@@ -970,37 +861,36 @@ namespace IsoMesh
                 return;
 
             m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, transform.localToWorldMatrix);
+
+            if (TryGetOrCreateMeshGameObject())
+                m_computeShaderInstance.SetMatrix(Properties.MeshTransform_Matrix4x4, m_meshFilterGameObject.transform.worldToLocalMatrix);
+            else if (m_mainSettings.OutputMode == OutputMode.Procedural)
+                m_computeShaderInstance.SetMatrix(Properties.MeshTransform_Matrix4x4, Matrix4x4.identity);
         }
 
         public void OnCellCountChanged()
         {
-            m_bounds = new Bounds
-            {
-                extents = Vector3.one * CellCount * CellSize
-            };
+            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
             if (!m_initialized || !m_isEnabled)
                 return;
 
             CreateVariableBuffers();
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
         public void OnCellSizeChanged()
         {
-            m_bounds = new Bounds
-            {
-                extents = Vector3.one * CellCount * CellSize
-            };
+            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.CellSize_Float, CellSize);
+            m_computeShaderInstance.SetFloat(Properties.CellSize_Float, m_voxelSettings.CellSize);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1009,9 +899,9 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.ConstrainToCellUnits_Float, m_constrainToCellUnits);
+            m_computeShaderInstance.SetFloat(Properties.ConstrainToCellUnits_Float, m_algorithmSettings.ConstrainToCellUnits);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1020,9 +910,9 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.VisualNormalSmoothing, m_visualNormalSmoothing);
+            m_computeShaderInstance.SetFloat(Properties.VisualNormalSmoothing, m_algorithmSettings.VisualNormalSmoothing);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1031,9 +921,9 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.MaxAngleCosine_Float, Mathf.Cos(m_maxAngleTolerance * Mathf.Deg2Rad));
+            m_computeShaderInstance.SetFloat(Properties.MaxAngleCosine_Float, Mathf.Cos(m_algorithmSettings.MaxAngleTolerance * Mathf.Deg2Rad));
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1042,9 +932,9 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetInt(Properties.GradientDescentIterations_Int, m_gradientDescentIterations);
+            m_computeShaderInstance.SetInt(Properties.GradientDescentIterations_Int, m_algorithmSettings.GradientDescentIterations);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1053,9 +943,9 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetInt(Properties.BinarySearchIterations_Int, m_binarySearchIterations);
+            m_computeShaderInstance.SetInt(Properties.BinarySearchIterations_Int, m_algorithmSettings.BinarySearchIterations);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1064,12 +954,12 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            if (m_isosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
+            if (m_algorithmSettings.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
                 m_computeShaderInstance.EnableKeyword(DualContouringKeyword);
             else
                 m_computeShaderInstance.DisableKeyword(DualContouringKeyword);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1078,21 +968,13 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            if (m_edgeIntersectionType == EdgeIntersectionType.BinarySearch)
+            if (m_algorithmSettings.EdgeIntersectionType == EdgeIntersectionType.BinarySearch)
                 m_computeShaderInstance.DisableKeyword(InterpolationKeyword);
             else
                 m_computeShaderInstance.EnableKeyword(InterpolationKeyword);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
-        }
-
-        public void SetNudgeSettings(float nudgeVerticesToAverageNormalScalar, float nudgeMaxMagnitude)
-        {
-            m_nudgeVerticesToAverageNormalScalar = nudgeVerticesToAverageNormalScalar;
-            m_nudgeMaxMagnitude = nudgeMaxMagnitude;
-
-            OnNudgeSettingsChanged();
         }
 
         public void OnNudgeSettingsChanged()
@@ -1100,10 +982,10 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.NudgeVerticesToAverageNormalScalar_Float, m_nudgeVerticesToAverageNormalScalar);
-            m_computeShaderInstance.SetFloat(Properties.NudgeMaxMagnitude_Float, m_nudgeMaxMagnitude);
+            m_computeShaderInstance.SetFloat(Properties.NudgeVerticesToAverageNormalScalar_Float, m_algorithmSettings.NudgeVerticesToAverageNormalScalar);
+            m_computeShaderInstance.SetFloat(Properties.NudgeMaxMagnitude_Float, m_algorithmSettings.NudgeMaxMagnitude);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1112,12 +994,12 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            if (m_applyGradientDescent)
+            if (m_algorithmSettings.ApplyGradientDescent)
                 m_computeShaderInstance.EnableKeyword(ApplyGradientDescentKeyword);
             else
                 m_computeShaderInstance.DisableKeyword(ApplyGradientDescentKeyword);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1126,40 +1008,35 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            m_computeShaderInstance.SetFloat(Properties.QEFPseudoInverseThreshold_Float, m_qefPseudoInverseThreshold);
-            m_computeShaderInstance.SetInt(Properties.QEFSweeps_Int, m_qefSweeps);
+            m_computeShaderInstance.SetFloat(Properties.QEFPseudoInverseThreshold_Float, m_algorithmSettings.QefPseudoInverseThreshold);
+            m_computeShaderInstance.SetInt(Properties.QEFSweeps_Int, m_algorithmSettings.QefSweeps);
 
-            if (m_overrideQEFSettings)
+            if (m_algorithmSettings.OverrideQEFSettings)
                 m_computeShaderInstance.EnableKeyword(OverrideQEFSettingsKeyword);
             else
                 m_computeShaderInstance.DisableKeyword(OverrideQEFSettingsKeyword);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
-
-        public void SetOutputMode(OutputMode outputMode)
-        {
-            m_outputMode = outputMode;
-            OnOutputModeChanged();
-        }
-
+        
         public void OnOutputModeChanged()
         {
-            if (m_outputMode == OutputMode.MeshFilter && TryGetOrCreateMeshGameObject())
+            if (TryGetOrCreateMeshGameObject())
             {
                 m_meshFilterGameObject.SetActive(true);
 
                 if (MeshRenderer)
                     MeshRenderer.enabled = !Group.IsEmpty;
-
-                Group.RequestUpdate(onlySendBufferOnChange: false);
             }
-            else if (m_outputMode == OutputMode.Procedural)
+            else if (m_mainSettings.OutputMode == OutputMode.Procedural)
             {
                 if (m_meshFilterGameObject)
                     m_meshFilterGameObject.SetActive(false);
             }
+
+            SendTransformToGPU();
+            Group.RequestUpdate(onlySendBufferOnChange: false);
         }
 
         public void OnDensitySettingChanged()
@@ -1179,14 +1056,14 @@ namespace IsoMesh
 
             if (!m_initialized)
                 InitializeComputeShaderSettings();
-
+            
             UpdateMapKernels(Properties.SDFData_StructuredBuffer, computeBuffer);
             m_computeShaderInstance.SetInt(Properties.SDFDataCount_Int, count);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
-        
+
         public void UpdateSettingsBuffer(ComputeBuffer computeBuffer)
         {
             if (!m_isEnabled)
@@ -1197,7 +1074,7 @@ namespace IsoMesh
 
             UpdateMapKernels(Properties.Settings_StructuredBuffer, computeBuffer);
 
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1210,12 +1087,12 @@ namespace IsoMesh
         public void OnNotEmpty()
         {
             if (MeshRenderer)
-                MeshRenderer.enabled = m_outputMode == OutputMode.MeshFilter;
+                MeshRenderer.enabled = m_mainSettings.OutputMode == OutputMode.MeshFilter;
         }
 
         public void OnPrimitivesChanged()
         {
-            if (m_autoUpdate)
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
 
@@ -1225,8 +1102,8 @@ namespace IsoMesh
 
         public Vector3 CellCoordinateToVertex(int x, int y, int z)
         {
-            float gridSize = (float)(SamplesPerSide - 1f);
-            float bound = (gridSize / 2f) * CellSize;
+            float gridSize = (float)(m_voxelSettings.SamplesPerSide - 1f);
+            float bound = (gridSize / 2f) * m_voxelSettings.CellSize;
 
             float xPos = Mathf.LerpUnclamped(-bound, bound, x / gridSize);
             float yPos = Mathf.LerpUnclamped(-bound, bound, y / gridSize);
@@ -1240,10 +1117,12 @@ namespace IsoMesh
 
         public Vector3Int IndexToCellCoordinate(int index)
         {
-            int z = index / (SamplesPerSide * SamplesPerSide);
-            index -= (z * SamplesPerSide * SamplesPerSide);
-            int y = index / SamplesPerSide;
-            int x = index % SamplesPerSide;
+            int samplesPerSide = m_voxelSettings.SamplesPerSide;
+
+            int z = index / (samplesPerSide * samplesPerSide);
+            index -= (z * samplesPerSide * samplesPerSide);
+            int y = index / samplesPerSide;
+            int x = index % samplesPerSide;
 
             return new Vector3Int(x, y, z);
         }
@@ -1255,7 +1134,7 @@ namespace IsoMesh
         }
 
         public int CellCoordinateToIndex(int x, int y, int z) =>
-            (x + y * SamplesPerSide + z * SamplesPerSide * SamplesPerSide);
+            (x + y * m_voxelSettings.SamplesPerSide + z * m_voxelSettings.SamplesPerSide * m_voxelSettings.SamplesPerSide);
 
         public int CellCoordinateToIndex(Vector3Int vec) =>
             CellCoordinateToIndex(vec.x, vec.y, vec.z);
@@ -1279,7 +1158,7 @@ namespace IsoMesh
         };
 
         [StructLayout(LayoutKind.Sequential)]
-        [SerializeField]
+        [System.Serializable]
         public struct VertexData
         {
             public static int Stride => sizeof(int) * 2 + sizeof(float) * 6;
@@ -1293,7 +1172,7 @@ namespace IsoMesh
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        [SerializeField]
+        [System.Serializable]
         public struct TriangleData
         {
             public static int Stride => sizeof(int) * 3;
@@ -1306,7 +1185,7 @@ namespace IsoMesh
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        [SerializeField]
+        [System.Serializable]
         public struct NewVertexData
         {
             public static int Stride => sizeof(int) + sizeof(float) * 6;
@@ -1318,6 +1197,252 @@ namespace IsoMesh
             public override string ToString() => $"Index = {Index}, Vertex = {Vertex}, Normal = {Normal}";
         }
 
+        #endregion
+
+        #region Data Classes
+
+        [System.Serializable]
+        public class MainSettings
+        {
+            [SerializeField]
+            private bool m_autoUpdate = true;
+            public bool AutoUpdate => m_autoUpdate;
+
+            [SerializeField]
+            private OutputMode m_outputMode = OutputMode.Procedural;
+            public OutputMode OutputMode => m_outputMode;
+
+            [SerializeField]
+            private bool m_isAsynchronous = false;
+            public bool IsAsynchronous => m_isAsynchronous;
+
+            [SerializeField]
+            private Material m_proceduralMaterial;
+            public Material ProceduralMaterial => m_proceduralMaterial;
+
+            public MainSettings Copy()
+            {
+                return new MainSettings()
+                {
+                    m_autoUpdate = this.m_autoUpdate,
+                    m_outputMode = this.m_outputMode,
+                    m_isAsynchronous = this.m_isAsynchronous,
+                    m_proceduralMaterial = this.m_proceduralMaterial
+                };
+            }
+        }
+
+        [System.Serializable]
+        public class VoxelSettings
+        {
+            [SerializeField]
+            private CellSizeMode m_cellSizeMode = CellSizeMode.Fixed;
+            public CellSizeMode CellSizeMode => m_cellSizeMode;
+
+            [SerializeField]
+            private float m_cellSize = 0.2f;
+
+            public float CellSize
+            {
+                get
+                {
+                    if (m_cellSizeMode == CellSizeMode.Density)
+                        return m_volumeSize / m_cellDensity;
+
+                    return m_cellSize;
+                }
+            }
+
+            [SerializeField]
+            private int m_cellCount = 50;
+
+            public int CellCount
+            {
+                get
+                {
+                    if (m_cellSizeMode == CellSizeMode.Density)
+                        return Mathf.FloorToInt(m_volumeSize * m_cellDensity);
+
+                    return m_cellCount;
+                }
+            }
+
+            [SerializeField]
+            private float m_volumeSize = 5f;
+            public float VolumeSize => m_volumeSize;
+
+            [SerializeField]
+            private float m_cellDensity = 1f;
+            public float CellDensity => m_cellDensity;
+
+            public int SamplesPerSide => CellCount + 1;
+            public int TotalSampleCount
+            {
+                get
+                {
+                    int samplesPerSide = CellCount + 1;
+                    return samplesPerSide * samplesPerSide * samplesPerSide;
+                }
+            }
+
+            public Vector3 Extents => Vector3.one * CellCount * CellSize;
+
+            /// <summary>
+            /// Returns the distance, along any axis, along which an additional volume must be positioned in order to perfectly overlap with this one.
+            /// For example, if this volume is at the origin, with a cellcount of 50 and a cellsize of 0.1, a volume to the left must be placed at (-4.8, 0, 0).
+            /// </summary>
+            public float OffsetDistance => (CellCount - 2) * CellSize;
+
+            public VoxelSettings Copy()
+            {
+                return new VoxelSettings()
+                {
+                    m_cellSizeMode = this.m_cellSizeMode,
+                    m_cellSize = this.m_cellSize,
+                    m_cellCount = this.m_cellCount,
+                    m_volumeSize = this.m_volumeSize,
+                    m_cellDensity = this.m_cellDensity
+                };
+            }
+        }
+
+        [System.Serializable]
+        public class AlgorithmSettings
+        {
+            [SerializeField]
+            private float m_maxAngleTolerance = 20f;
+            public float MaxAngleTolerance => m_maxAngleTolerance;
+
+            [SerializeField]
+            private float m_visualNormalSmoothing = 1e-5f;
+            public float VisualNormalSmoothing => m_visualNormalSmoothing;
+
+            [SerializeField]
+            private IsosurfaceExtractionType m_isosurfaceExtractionType = IsosurfaceExtractionType.SurfaceNets;
+            public IsosurfaceExtractionType IsosurfaceExtractionType => m_isosurfaceExtractionType;
+
+            [SerializeField]
+            private float m_constrainToCellUnits = 0f;
+            public float ConstrainToCellUnits => m_constrainToCellUnits;
+
+            [SerializeField]
+            private bool m_overrideQEFSettings = false;
+            public bool OverrideQEFSettings => m_overrideQEFSettings;
+
+            [SerializeField]
+            private int m_qefSweeps = 5;
+            public int QefSweeps => m_qefSweeps;
+
+            [SerializeField]
+            private float m_qefPseudoInverseThreshold = 1e-2f;
+            public float QefPseudoInverseThreshold => m_qefPseudoInverseThreshold;
+
+            [SerializeField]
+            private EdgeIntersectionType m_edgeIntersectionType = EdgeIntersectionType.Interpolation;
+            public EdgeIntersectionType EdgeIntersectionType => m_edgeIntersectionType;
+
+            [SerializeField]
+            private int m_binarySearchIterations = 5;
+            public int BinarySearchIterations => m_binarySearchIterations;
+
+            [SerializeField]
+            private bool m_applyGradientDescent = false;
+            public bool ApplyGradientDescent => m_applyGradientDescent;
+
+            [SerializeField]
+            private int m_gradientDescentIterations = 10;
+            public int GradientDescentIterations => m_gradientDescentIterations;
+
+            [SerializeField]
+            private float m_nudgeVerticesToAverageNormalScalar = 0.01f;
+            public float NudgeVerticesToAverageNormalScalar => m_nudgeVerticesToAverageNormalScalar;
+
+            [SerializeField]
+            private float m_nudgeMaxMagnitude = 1f;
+            public float NudgeMaxMagnitude => m_nudgeMaxMagnitude;
+
+            public AlgorithmSettings Copy()
+            {
+                return new AlgorithmSettings()
+                {
+                    m_maxAngleTolerance = this.m_maxAngleTolerance,
+                    m_visualNormalSmoothing = this.m_visualNormalSmoothing,
+                    m_isosurfaceExtractionType = this.m_isosurfaceExtractionType,
+                    m_constrainToCellUnits = this.m_constrainToCellUnits,
+                    m_overrideQEFSettings = this.m_overrideQEFSettings,
+                    m_qefSweeps = this.m_qefSweeps,
+                    m_qefPseudoInverseThreshold = this.m_qefPseudoInverseThreshold,
+                    m_edgeIntersectionType = this.m_edgeIntersectionType,
+                    m_binarySearchIterations = this.m_binarySearchIterations,
+                    m_applyGradientDescent = this.m_applyGradientDescent,
+                    m_gradientDescentIterations = this.m_gradientDescentIterations,
+                    m_nudgeVerticesToAverageNormalScalar = this.m_nudgeVerticesToAverageNormalScalar,
+                    m_nudgeMaxMagnitude = this.m_nudgeMaxMagnitude,
+                };
+            }
+        }
+
+        #endregion
+
+        #region Static Methods
+
+        public SDFGroupMeshGenerator Duplicate(Vector3Int offset = default) => Duplicate(this, offset);
+
+        /// <summary>
+        /// Duplicate this object in a way that's fast and works in editor and in builds, in play mode and in edit mode.
+        /// </summary>
+        public static SDFGroupMeshGenerator Duplicate(SDFGroupMeshGenerator original, Vector3Int offset = default)
+        {
+            GameObject cloneObject = new GameObject(original.name + " Clone");
+            cloneObject.transform.SetParent(original.transform.parent);
+            cloneObject.transform.position = original.transform.position + (Vector3)offset * original.m_voxelSettings.OffsetDistance;
+            cloneObject.SetActive(false);
+
+            GameObject cloneMeshObject = null;
+
+            if (original.m_mainSettings.OutputMode == OutputMode.MeshFilter && original.m_meshFilterGameObject)
+            {
+                GameObject originalMeshObject = original.m_meshFilterGameObject;
+
+                cloneMeshObject = new GameObject(original.name + " Generated Mesh", typeof(MeshFilter));
+                cloneMeshObject.transform.SetParent(cloneObject.transform);
+                cloneMeshObject.transform.Reset();
+                
+                if (originalMeshObject.TryGetComponent(out MeshRenderer originalMeshRenderer))
+                {
+                    MeshRenderer clonedMeshRenderer = cloneMeshObject.AddComponent<MeshRenderer>();
+                    clonedMeshRenderer.sharedMaterial = originalMeshRenderer.sharedMaterial;
+                }
+
+                if (originalMeshObject.TryGetComponent(out MeshCollider originalMeshCollider))
+                {
+                    cloneMeshObject.AddComponent<MeshCollider>();
+                }
+            }
+
+            SDFGroupMeshGenerator clonedComponent = cloneObject.AddComponent<SDFGroupMeshGenerator>();
+
+            clonedComponent.m_meshFilterGameObject = cloneMeshObject;
+            clonedComponent.m_group = original.m_group;
+            clonedComponent.m_mainSettings = original.m_mainSettings.Copy();
+            clonedComponent.m_algorithmSettings = original.m_algorithmSettings.Copy();
+            clonedComponent.m_voxelSettings = original.m_voxelSettings.Copy();
+
+            cloneObject.SetActive(original.gameObject.activeSelf);
+
+            // Move directly underneath original
+            cloneObject.transform.SetSiblingIndex(original.transform.GetSiblingIndex() + 1);
+
+#if UNITY_EDITOR
+            // Select new object
+            Selection.activeGameObject = cloneObject;
+
+            // Register Undo
+            Undo.RegisterCreatedObjectUndo(cloneObject, "Duplicated SDF Mesh Generator");
+#endif
+
+            return clonedComponent;
+        }
 
         #endregion
     }

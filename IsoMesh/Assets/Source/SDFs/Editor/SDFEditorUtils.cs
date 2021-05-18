@@ -475,7 +475,5 @@ namespace IsoMesh.Editor
 
             Debug.LogError("SerializedProperty is not a float vector. Type is " + serializedProperty.propertyType);
         }
-
-
     }
 }

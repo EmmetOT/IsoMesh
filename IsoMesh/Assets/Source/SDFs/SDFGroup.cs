@@ -183,7 +183,7 @@ namespace IsoMesh
             CompilationPipeline.compilationStarted += OnCompilationStarted;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 #endif
-
+            
             m_isEnabled = true;
             m_isGlobalMeshDataDirty = true;
             m_isLocalDataDirty = true;
@@ -195,6 +195,7 @@ namespace IsoMesh
 
         private void Start()
         {
+            m_isEnabled = true;
             m_isGlobalMeshDataDirty = true;
             m_isLocalDataDirty = true;
             m_isLocalDataOrderDirty = true;
@@ -209,7 +210,7 @@ namespace IsoMesh
             CompilationPipeline.compilationStarted -= OnCompilationStarted;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
 #endif
-
+            
             m_isEnabled = false;
             IsReady = false;
 
@@ -527,8 +528,9 @@ namespace IsoMesh
 
         private void OnPlayModeStateChanged(PlayModeStateChange stateChange)
         {
-            m_isEnabled = false;
-
+            // this ensures "m_isEnabled" is set to false while transitioning between play modes
+            m_isEnabled = stateChange == PlayModeStateChange.EnteredPlayMode || stateChange == PlayModeStateChange.EnteredEditMode;
+            
             m_meshSamplesBuffer?.Dispose();
             m_meshPackedUVsBuffer?.Dispose();
         }

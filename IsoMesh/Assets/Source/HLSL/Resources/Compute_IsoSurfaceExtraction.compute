@@ -436,6 +436,8 @@ void SurfaceNets_GenerateVertices(uint3 id : SV_DispatchThreadID)
 RWStructuredBuffer<VertexData> _VertexDataPoints_Structured;
 AppendStructuredBuffer<TriangleData> _TriangleDataPoints;
 
+float4x4 _MeshTransform;
+
 // called for each surface vertex, this kernel just tells each vertex its own index
 [numthreads(64, 1, 1)]
 void SurfaceNets_NumberVertices(uint3 id : SV_DispatchThreadID)
@@ -444,6 +446,13 @@ void SurfaceNets_NumberVertices(uint3 id : SV_DispatchThreadID)
         return;
     
     VertexData data = _VertexDataPoints_Structured[id.x];
+    
+    // also use this step to apply an optional 'after the fact' transform.
+    // this is used to offset undesirable unity hierarchy transforms, usually if data
+    // will be sent back to the cpu
+    data.Vertex = mul(_MeshTransform, float4(data.Vertex, 1.0)).xyz;
+    data.Normal = mul(_MeshTransform, float4(data.Normal, 0.0)).xyz;
+    
     data.Index = id.x;
     _VertexDataPoints_Structured[id.x] = data;
     
@@ -589,7 +598,6 @@ void SurfaceNets_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     // index of the vertex being evaluated
     int i_1 = id.x;
     VertexData data = _VertexDataPoints_Structured[i_1];
-    
     _MeshVertices[id.x] = data.Vertex;
     _MeshNormals[id.x] = data.Normal;
     _MeshUVs[id.x] = MapUV(data.Vertex);

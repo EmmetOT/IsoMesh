@@ -42,6 +42,10 @@ namespace IsoMesh.Editor
         private class SerializedProperties
         {
             public SerializedProperty ComputeShader { get; }
+            public SerializedProperty MainSettings { get; }
+            public SerializedProperty VoxelSettings { get; }
+            public SerializedProperty AlgorithmSettings { get; }
+            
             public SerializedProperty SDFGroup { get; }
             public SerializedProperty AutoUpdate { get; }
             public SerializedProperty OutputMode { get; }
@@ -71,28 +75,35 @@ namespace IsoMesh.Editor
             {
                 ComputeShader = serializedObject.FindProperty("m_computeShader");
                 SDFGroup = serializedObject.FindProperty("m_group");
-                AutoUpdate = serializedObject.FindProperty("m_autoUpdate");
-                OutputMode = serializedObject.FindProperty("m_outputMode");
-                IsAsynchronous = serializedObject.FindProperty("m_isAsynchronous");
-                ProceduralMaterial = serializedObject.FindProperty("m_proceduralMaterial");
-                CellSizeMode = serializedObject.FindProperty("m_cellSizeMode");
-                CellSize = serializedObject.FindProperty("m_cellSize");
-                CellCount = serializedObject.FindProperty("m_cellCount");
-                VolumeSize = serializedObject.FindProperty("m_volumeSize");
-                CellDensity = serializedObject.FindProperty("m_cellDensity");
-                MaxAngleTolerance = serializedObject.FindProperty("m_maxAngleTolerance");
-                VisualNormalSmoothing = serializedObject.FindProperty("m_visualNormalSmoothing");
-                IsosurfaceExtractionType = serializedObject.FindProperty("m_isosurfaceExtractionType");
-                ConstrainToCellUnits = serializedObject.FindProperty("m_constrainToCellUnits");
-                OverrideQEFSettings = serializedObject.FindProperty("m_overrideQEFSettings");
-                QEFSweeps = serializedObject.FindProperty("m_qefSweeps");
-                QEFPseudoInverseThreshold = serializedObject.FindProperty("m_qefPseudoInverseThreshold");
-                EdgeIntersectionType = serializedObject.FindProperty("m_edgeIntersectionType");
-                BinarySearchIterations = serializedObject.FindProperty("m_binarySearchIterations");
-                ApplyGradientDescent = serializedObject.FindProperty("m_applyGradientDescent");
-                GradientDescentIterations = serializedObject.FindProperty("m_gradientDescentIterations");
-                NudgeVerticesToAverageNormalScalar = serializedObject.FindProperty("m_nudgeVerticesToAverageNormalScalar");
-                NudgeMaxMagnitude = serializedObject.FindProperty("m_nudgeMaxMagnitude");
+                
+                MainSettings = serializedObject.FindProperty("m_mainSettings");
+                AutoUpdate = MainSettings.FindPropertyRelative("m_autoUpdate");
+                OutputMode = MainSettings.FindPropertyRelative("m_outputMode");
+                IsAsynchronous = MainSettings.FindPropertyRelative("m_isAsynchronous");
+                ProceduralMaterial = MainSettings.FindPropertyRelative("m_proceduralMaterial");
+
+                AlgorithmSettings = serializedObject.FindProperty("m_algorithmSettings");
+                MaxAngleTolerance = AlgorithmSettings.FindPropertyRelative("m_maxAngleTolerance");
+                VisualNormalSmoothing = AlgorithmSettings.FindPropertyRelative("m_visualNormalSmoothing");
+                IsosurfaceExtractionType = AlgorithmSettings.FindPropertyRelative("m_isosurfaceExtractionType");
+                ConstrainToCellUnits = AlgorithmSettings.FindPropertyRelative("m_constrainToCellUnits");
+                OverrideQEFSettings = AlgorithmSettings.FindPropertyRelative("m_overrideQEFSettings");
+                QEFSweeps = AlgorithmSettings.FindPropertyRelative("m_qefSweeps");
+                QEFPseudoInverseThreshold = AlgorithmSettings.FindPropertyRelative("m_qefPseudoInverseThreshold");
+                EdgeIntersectionType = AlgorithmSettings.FindPropertyRelative("m_edgeIntersectionType");
+                BinarySearchIterations = AlgorithmSettings.FindPropertyRelative("m_binarySearchIterations");
+                ApplyGradientDescent = AlgorithmSettings.FindPropertyRelative("m_applyGradientDescent");
+                GradientDescentIterations = AlgorithmSettings.FindPropertyRelative("m_gradientDescentIterations");
+                NudgeVerticesToAverageNormalScalar = AlgorithmSettings.FindPropertyRelative("m_nudgeVerticesToAverageNormalScalar");
+                NudgeMaxMagnitude = AlgorithmSettings.FindPropertyRelative("m_nudgeMaxMagnitude");
+
+                VoxelSettings = serializedObject.FindProperty("m_voxelSettings");
+                CellSizeMode = VoxelSettings.FindPropertyRelative("m_cellSizeMode");
+                CellSize = VoxelSettings.FindPropertyRelative("m_cellSize");
+                CellCount = VoxelSettings.FindPropertyRelative("m_cellCount");
+                VolumeSize = VoxelSettings.FindPropertyRelative("m_volumeSize");
+                CellDensity = VoxelSettings.FindPropertyRelative("m_cellDensity");
+
                 ShowGrid = serializedObject.FindProperty("m_showGrid");
             }
         }
@@ -126,16 +137,18 @@ namespace IsoMesh.Editor
             GUI.enabled = false;
             EditorGUILayout.PropertyField(m_serializedProperties.SDFGroup, Labels.SDFGroup);
             GUI.enabled = true;
-            
+
             m_setter.DrawProperty(Labels.AutoUpdate, m_serializedProperties.AutoUpdate);
 
             m_setter.DrawEnumSetting<OutputMode>(Labels.OutputMode, m_serializedProperties.OutputMode, onValueChangedCallback: m_sdfGroupMeshGen.OnOutputModeChanged);
 
-            if (m_sdfGroupMeshGen.OutputMode == OutputMode.Procedural)
+            OutputMode outputMode = (OutputMode)m_serializedProperties.OutputMode.enumValueIndex;
+
+            if (outputMode == OutputMode.Procedural)
             {
                 m_setter.DrawProperty(Labels.ProceduralMaterial, m_serializedProperties.ProceduralMaterial);
             }
-            else if (m_sdfGroupMeshGen.OutputMode == OutputMode.MeshFilter)
+            else if (outputMode == OutputMode.MeshFilter)
             {
                 m_setter.DrawProperty(Labels.IsAsynchronous, m_serializedProperties.IsAsynchronous);
             }
@@ -148,12 +161,14 @@ namespace IsoMesh.Editor
                     {
                         m_setter.DrawProperty(Labels.CellSizeMode, m_serializedProperties.CellSizeMode);
 
-                        if (m_sdfGroupMeshGen.CellSizeMode == CellSizeMode.Fixed)
+                        CellSizeMode cellSizeMode = (CellSizeMode)m_serializedProperties.CellSizeMode.enumValueIndex;
+
+                        if (cellSizeMode == CellSizeMode.Fixed)
                         {
                             m_setter.DrawFloatSetting(Labels.CellSize, m_serializedProperties.CellSize, min: 0.005f, onValueChangedCallback: m_sdfGroupMeshGen.OnCellSizeChanged);
                             m_setter.DrawIntSetting(Labels.CellCount, m_serializedProperties.CellCount, min: 2, max: 200, onValueChangedCallback: m_sdfGroupMeshGen.OnCellCountChanged);
                         }
-                        else if (m_sdfGroupMeshGen.CellSizeMode == CellSizeMode.Density)
+                        else if (cellSizeMode == CellSizeMode.Density)
                         {
                             m_setter.DrawFloatSetting(Labels.VolumeSize, m_serializedProperties.VolumeSize, min: 0.05f, onValueChangedCallback: m_sdfGroupMeshGen.OnDensitySettingChanged);
                             m_setter.DrawFloatSetting(Labels.CellDensity, m_serializedProperties.CellDensity, min: 0.05f, onValueChangedCallback: m_sdfGroupMeshGen.OnDensitySettingChanged);
@@ -170,7 +185,7 @@ namespace IsoMesh.Editor
                     {
                         m_setter.DrawEnumSetting<IsosurfaceExtractionType>(Labels.IsosurfaceExtractionType, m_serializedProperties.IsosurfaceExtractionType, onValueChangedCallback: m_sdfGroupMeshGen.OnIsosurfaceExtractionTypeChanged);
 
-                        if (m_sdfGroupMeshGen.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
+                        if ((IsosurfaceExtractionType)m_serializedProperties.IsosurfaceExtractionType.enumValueIndex == IsosurfaceExtractionType.DualContouring)
                             m_setter.DrawFloatSetting(Labels.ConstrainToCellUnits, m_serializedProperties.ConstrainToCellUnits, min: 0f, onValueChangedCallback: m_sdfGroupMeshGen.OnConstrainToCellUnitsChanged);
 
                         EditorGUILayout.Space();
@@ -179,14 +194,14 @@ namespace IsoMesh.Editor
                         m_setter.DrawFloatSetting(Labels.MaxAngleTolerance, m_serializedProperties.MaxAngleTolerance, min: 0f, max: 180f, onValueChangedCallback: m_sdfGroupMeshGen.OnMaxAngleToleranceChanged);
                         m_setter.DrawFloatSetting(Labels.VisualNormalSmoothing, m_serializedProperties.VisualNormalSmoothing, min: 1e-5f, max: 10f, onValueChangedCallback: m_sdfGroupMeshGen.OnVisualNormalSmoothingChanged);
 
-                        if (m_sdfGroupMeshGen.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
+                        if ((IsosurfaceExtractionType)m_serializedProperties.IsosurfaceExtractionType.enumValueIndex == IsosurfaceExtractionType.DualContouring)
                         {
                             EditorGUILayout.Space();
                             EditorGUILayout.LabelField("QEF Settings", EditorStyles.boldLabel);
 
                             m_setter.DrawBoolSetting(Labels.OverrideQEFSettings, m_serializedProperties.OverrideQEFSettings, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
 
-                            if (m_sdfGroupMeshGen.OverrideQEFSettings)
+                            if (m_serializedProperties.OverrideQEFSettings.boolValue)
                             {
                                 m_setter.DrawIntSetting(Labels.QEFSweeps, m_serializedProperties.QEFSweeps, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
                                 m_setter.DrawFloatSetting(Labels.QEFPseudoInverseThreshold, m_serializedProperties.QEFPseudoInverseThreshold, min: 1e-7f, onValueChangedCallback: m_sdfGroupMeshGen.OnQEFSettingsOverrideChanged);
@@ -204,7 +219,7 @@ namespace IsoMesh.Editor
 
                         m_setter.DrawEnumSetting<EdgeIntersectionType>(Labels.EdgeIntersectionType, m_serializedProperties.EdgeIntersectionType, onValueChangedCallback: m_sdfGroupMeshGen.OnEdgeIntersectionTypeChanged);
 
-                        if (m_sdfGroupMeshGen.EdgeIntersectionType == EdgeIntersectionType.BinarySearch)
+                        if ((EdgeIntersectionType)m_serializedProperties.EdgeIntersectionType.enumValueIndex == EdgeIntersectionType.BinarySearch)
                             m_setter.DrawIntSetting(Labels.BinarySearchIterations, m_serializedProperties.BinarySearchIterations, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnBinarySearchIterationsChanged);
 
                         EditorGUILayout.Space();
@@ -212,7 +227,7 @@ namespace IsoMesh.Editor
 
                         m_setter.DrawBoolSetting(Labels.ApplyGradientDescent, m_serializedProperties.ApplyGradientDescent, onValueChangedCallback: m_sdfGroupMeshGen.OnApplyGradientDescentChanged);
 
-                        if (m_sdfGroupMeshGen.ApplyGradientDescent)
+                        if (m_serializedProperties.ApplyGradientDescent.boolValue)
                             m_setter.DrawIntSetting(Labels.GradientDescentIterations, m_serializedProperties.GradientDescentIterations, min: 1, onValueChangedCallback: m_sdfGroupMeshGen.OnGradientDescentIterationsChanged);
                     }
                 }
@@ -234,20 +249,22 @@ namespace IsoMesh.Editor
 
         private void OnSceneGUI()
         {
+            int cellCount = m_serializedProperties.CellCount.intValue;
+            float cellSize = m_serializedProperties.CellSize.floatValue;
+            int samplesPerSide = cellCount + 1;
+
             Handles.matrix = m_sdfGroupMeshGen.transform.localToWorldMatrix;
             Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
             Handles.color = Color.black;
-            Handles.DrawWireCube(Vector3.zero, Vector3.one * m_sdfGroupMeshGen.CellCount * m_sdfGroupMeshGen.CellSize);
+            Handles.DrawWireCube(Vector3.zero, Vector3.one * cellCount * cellSize);
 
             if (m_sdfGroupMeshGen.ShowGrid)
             {
-                int cellCount = m_sdfGroupMeshGen.CellCount;
-
                 const float lineThickness = 1f;
 
-                for (int i = 0; i < m_sdfGroupMeshGen.SamplesPerSide; i++)
+                for (int i = 0; i < samplesPerSide; i++)
                 {
-                    for (int j = 0; j < m_sdfGroupMeshGen.SamplesPerSide; j++)
+                    for (int j = 0; j < samplesPerSide; j++)
                     {
                         Vector3 xVertexStart = m_sdfGroupMeshGen.CellCoordinateToVertex(0, i, j);
                         Vector3 yVertexStart = m_sdfGroupMeshGen.CellCoordinateToVertex(i, 0, j);
@@ -263,6 +280,30 @@ namespace IsoMesh.Editor
                     }
                 }
             }
+        }
+        
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Left")]
+        private static void DuplicateLeft(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.left);
+
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Right")]
+        private static void DuplicateRight(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.right);
+
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Up")]
+        private static void DuplicateUp(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.up);
+
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Down")]
+        private static void DuplicateDown(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.down);
+
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Forward")]
+        private static void DuplicateForward(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.forward);
+
+        [MenuItem("CONTEXT/SDFGroupMeshGenerator/Duplicate/Back")]
+        private static void DuplicateBack(MenuCommand menuCommand) => Duplicate(menuCommand, Vector3Int.back);
+
+        private static void Duplicate(MenuCommand menuCommand, Vector3Int offset)
+        {
+            SDFGroupMeshGenerator meshGen = menuCommand.context as SDFGroupMeshGenerator;
+            meshGen.Duplicate(offset);
         }
     }
 }
