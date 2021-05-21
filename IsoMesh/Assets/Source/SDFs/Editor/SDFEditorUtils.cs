@@ -192,7 +192,11 @@ namespace IsoMesh.Editor
                 if (check.changed)
                 {
                     Undo.RecordObject(obj, "Changed " + label.text);
-                    property.SetVectorProperty(newVal);
+
+                    Vector4 vec4OldVal = GetVectorProperty(property);
+                    Vector4 vec4NewVal = newVal;
+
+                    property.SetVectorProperty(vec4NewVal.SetW(vec4OldVal.w));
                     return true;
                 }
             }
