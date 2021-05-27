@@ -9,6 +9,8 @@ namespace IsoMesh
     [ExecuteInEditMode]
     public abstract class SDFObject : MonoBehaviour
     {
+        protected const float MIN_SMOOTHING = 0.000000001f;
+
         [SerializeField]
         [ReadOnly]
         private SDFGroup m_sdfGroup;
@@ -22,6 +24,9 @@ namespace IsoMesh
                 return m_sdfGroup;
             }
         }
+
+        [SerializeField]
+        protected float m_smoothing = MIN_SMOOTHING;
 
         protected bool m_isDirty = false;
         private bool m_isOrderDirty = false;
@@ -90,6 +95,8 @@ namespace IsoMesh
 
     public enum SDFCombineType
     {
-        SmoothMin, SmoothSubtract
+        SmoothUnion,
+        SmoothSubtract,
+        SmoothIntersect
     }
 }

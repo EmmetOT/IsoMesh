@@ -13,7 +13,7 @@ namespace IsoMesh.Editor
         {
             public static GUIContent IsRunning = new GUIContent("Is Running", "Whether this group is actively updating.");
             public static GUIContent Settings = new GUIContent("Settings", "Additional controls for the entire group.");
-            public static GUIContent Smoothing = new GUIContent("Smoothing", "The global smoothing setting for combining signed distance fields. It's fun!");
+            //public static GUIContent Smoothing = new GUIContent("Smoothing", "The global smoothing setting for combining signed distance fields. It's fun!");
             public static GUIContent NormalSmoothing = new GUIContent("Normal Smoothing", "The sample size for determining the normals of the resulting combined SDF. Higher values produce smoother normals.");
         }
 
@@ -26,7 +26,7 @@ namespace IsoMesh.Editor
             public SerializedProperties(SerializedObject serializedObject)
             {
                 IsRunning = serializedObject.FindProperty("m_isRunning");
-                Smoothing = serializedObject.FindProperty("m_smoothing");
+                //Smoothing = serializedObject.FindProperty("m_smoothing");
                 NormalSmoothing = serializedObject.FindProperty("m_normalSmoothing");
             }
         }
@@ -53,10 +53,10 @@ namespace IsoMesh.Editor
                 {
                     using (EditorGUI.IndentLevelScope indent = new EditorGUI.IndentLevelScope())
                     {
-                        if (this.DrawFloatField(Labels.Smoothing, m_serializedProperties.Smoothing, out float val, min: SDFGroup.MIN_SMOOTHING))
-                            m_sdfGroup.SetSmoothing(val);
+                        //if (this.DrawFloatField(Labels.Smoothing, m_serializedProperties.Smoothing, out float val, min: SDFGroup.MIN_SMOOTHING))
+                        //    m_sdfGroup.SetSmoothing(val);
 
-                        if (this.DrawFloatField(Labels.NormalSmoothing, m_serializedProperties.NormalSmoothing, out val, min: SDFGroup.MIN_SMOOTHING))
+                        if (this.DrawFloatField(Labels.NormalSmoothing, m_serializedProperties.NormalSmoothing, out float val, min: SDFGroup.MIN_SMOOTHING))
                             m_sdfGroup.SetNormalSmoothing(val);
                     }
                 }

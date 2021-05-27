@@ -62,8 +62,9 @@ namespace IsoMesh
                 CombineType = (int)m_combineType,
                 Flip = m_flip ? -1 : 1,
                 MinBounds = m_asset.MinBounds,
-                MaxBounds = m_asset.MaxBounds
-            };
+                MaxBounds = m_asset.MaxBounds,
+                Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing)
+        };
         }
 
 #if UNITY_EDITOR

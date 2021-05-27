@@ -11,6 +11,8 @@ namespace IsoMesh
     /// An SDF group is a collection of sdf primitives, meshes, and operations which mutually interact.
     /// This class is not responsible for rendering the result or indeed doing anything with it. Instead, it dispatches
     /// the resulting buffers to SDF Components. These components must be a child of the group and implement the ISDFComponent interface.
+    /// 
+    /// This class also contains the functionality to directly provide information about the SDF, like raycasting.
     /// </summary>
     [ExecuteInEditMode]
     public class SDFGroup : MonoBehaviour
@@ -47,19 +49,19 @@ namespace IsoMesh
         // called during recompiles etc. you can basically read this bool as "is recompiling"
         private bool m_isEnabled = false;
 
-        [SerializeField]
-        private float m_smoothing = 0.2f;
-        public float Smoothing => m_smoothing;
-        public void SetSmoothing(float smoothing)
-        {
-            m_smoothing = smoothing;
-            OnSettingsChanged();
-        }
+        //[SerializeField]
+        //private float m_smoothing = 0.2f;
+        //public float Smoothing => m_smoothing;
+        //public void SetSmoothing(float smoothing)
+        //{
+        //    m_smoothing = smoothing;
+        //    OnSettingsChanged();
+        //}
 
         [SerializeField]
         private float m_normalSmoothing = 0.015f;
         public float NormalSmoothing => m_normalSmoothing;
-        public void SetNormalSmoothing(float normalSmoothing)//
+        public void SetNormalSmoothing(float normalSmoothing)
         {
             m_normalSmoothing = normalSmoothing;
             OnSettingsChanged();
@@ -97,6 +99,11 @@ namespace IsoMesh
         private static bool m_isGlobalMeshDataDirty = true;
         private bool m_isLocalDataDirty = true;
         private bool m_isLocalDataOrderDirty = true;
+
+        /// <summary>
+        /// The mapper allows you to quickly query the SDF without involving the GPU.
+        /// </summary>
+        public Mapper Mapper { get; } = new Mapper();
 
         #endregion
 
@@ -391,7 +398,7 @@ namespace IsoMesh
 
             if (m_meshPackedUVs.Count > 0)
                 m_meshPackedUVsBuffer.SetData(m_meshPackedUVs);
-
+            
             m_isGlobalMeshDataDirty = false;
 
             return newBuffers;
@@ -483,11 +490,15 @@ namespace IsoMesh
             if (m_data.Count > 0)
                 m_dataBuffer.SetData(m_data);
 
+            Mapper.SetData(m_data);
+
             // if we also changed the global mesh data buffer in this method, we need to send that as well
             if (!onlySendBufferOnChange || globalBuffersChanged)
             {
                 Shader.SetGlobalBuffer(GlobalProperties.MeshSamples_StructuredBuffer, m_meshSamplesBuffer);
                 Shader.SetGlobalBuffer(GlobalProperties.MeshPackedUVs_StructuredBuffer, m_meshPackedUVsBuffer);
+
+                Mapper.SetMeshData(m_meshSamples, m_meshPackedUVs);
             }
         }
 
@@ -502,7 +513,7 @@ namespace IsoMesh
         {
             m_settingsArray[0] = new Settings()
             {
-                Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing),
+                //Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing),
                 NormalSmoothing = Mathf.Max(MIN_SMOOTHING, m_normalSmoothing)
             };
 
@@ -514,6 +525,8 @@ namespace IsoMesh
 
             for (int i = 0; i < m_sdfComponents.Count; i++)
                 m_sdfComponents[i].UpdateSettingsBuffer(m_settingsBuffer);
+
+            Mapper.SetSettings(m_settingsArray[0]);
 
             m_settingsBuffer.SetData(m_settingsArray);
         }
@@ -541,11 +554,72 @@ namespace IsoMesh
 
         public struct Settings
         {
-            public static int Stride => sizeof(float) * 2;
+            public static int Stride => sizeof(float);// * 2;
 
-            public float Smoothing;     // the input to the smooth min function
+            //public float Smoothing;     // the input to the smooth min function
             public float NormalSmoothing;   // the 'epsilon' value for computing the gradient, affects how smoothed out the normals are
         }
+
+        #endregion
+
+        #region Public Methods
+
+        public Vector3 GetNearestPointOnSurface(Vector3 p) => GetNearestPointOnSurface(p, out _, out _);
+
+        public Vector3 GetNearestPointOnSurface(Vector3 p, out float signedDistance) => GetNearestPointOnSurface(p, out signedDistance, out _);
+
+        public Vector3 GetNearestPointOnSurface(Vector3 p, out float signedDistance, out Vector3 direction)
+        {
+            signedDistance = Mapper.Map(p);
+            direction = -Mapper.MapNormal(p);
+
+            return p + signedDistance * direction;
+        }
+
+        public Vector3 GetSurfaceNormal(Vector3 p) => Mapper.MapNormal(p);
+
+        public float GetDistanceToSurface(Vector3 p) => Mapper.Map(p);
+
+        public bool OverlapSphere(Vector3 centre, float radius) => Mapper.Map(centre) <= radius;
+        
+        //public bool OverlapBox(Vector3 centre, Vector3 halfExtents, bool surfaceOnly = true) => OverlapBox(centre, halfExtents, Quaternion.identity, surfaceOnly);
+
+        public bool OverlapBox(Vector3 centre, Vector3 halfExtents)
+        {
+            if (!OverlapSphere(centre, halfExtents.magnitude))
+                return false;
+
+            Vector3 maxBounds = centre + halfExtents;
+            Vector3 minBounds = centre - halfExtents;
+
+            bool Check(Vector3 p)
+            {
+                Vector3 surfaceP = GetNearestPointOnSurface(p, out float signedDistance);
+
+                bool isInside =
+                    surfaceP.x >= minBounds.x && surfaceP.x <= maxBounds.x &&
+                    surfaceP.y >= minBounds.y && surfaceP.y <= maxBounds.y &&
+                    surfaceP.z >= minBounds.z && surfaceP.z <= maxBounds.z;
+
+                return isInside;
+            }
+
+            return (Check(centre) ||
+                Check(centre + halfExtents) ||
+                Check(centre - halfExtents) ||
+                Check(centre + new Vector3(halfExtents.x, halfExtents.y, -halfExtents.z)) ||
+                Check(centre + new Vector3(halfExtents.x, -halfExtents.y, halfExtents.z)) ||
+                Check(centre + new Vector3(halfExtents.x, -halfExtents.y, -halfExtents.z)) ||
+                Check(centre + new Vector3(-halfExtents.x, halfExtents.y, halfExtents.z)) ||
+                Check(centre + new Vector3(-halfExtents.x, halfExtents.y, -halfExtents.z)) ||
+                Check(centre + new Vector3(-halfExtents.x, -halfExtents.y, halfExtents.z)));
+        }
+
+        /// <summary>
+        /// Raycast the sdf group. This is done via raymarching on the CPU side.
+        /// </summary>
+        public bool Raycast(Vector3 origin, Vector3 direction, out Vector3 hitPoint, out Vector3 hitNormal, float maxDist = 350f) =>
+            Mapper.Raymarch(origin, direction, out hitPoint, out hitNormal, maxDist);
 
         #endregion
 
@@ -559,43 +633,5 @@ namespace IsoMesh
         }
 
         #endregion
-    }
-
-    public struct SDFHierarchyPositionComparer : IComparer<SDFGPUData>
-    {
-        private List<int> m_positions;
-        private List<SDFGPUData> m_list;
-
-        public SDFHierarchyPositionComparer(List<SDFGPUData> list, List<int> positions)
-        {
-            m_list = list;
-            m_positions = positions;
-        }
-
-        public int Compare(SDFGPUData x, SDFGPUData y)
-        {
-            int xIndex = -1;
-            int yIndex = -1;
-
-            for (int i = 0; i < m_list.Count; i++)
-            {
-                if (m_list[i].Equals(x))
-                    xIndex = i;
-
-                if (m_list[i].Equals(y))
-                    yIndex = i;
-
-                if (xIndex != -1 && yIndex != -1)
-                    break;
-            }
-
-            if (xIndex == -1 || yIndex == -1)
-                return 0;
-
-            int xPosition = m_positions[xIndex];
-            int yPosition = m_positions[yIndex];
-
-            return xPosition.CompareTo(yPosition);
-        }
     }
 }

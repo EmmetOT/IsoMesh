@@ -5,6 +5,7 @@
 #define PRIMITIVE_TYPE_TORUS 2
 #define PRIMITIVE_TYPE_CUBOID 3
 #define PRIMITIVE_TYPE_BOX_FRAME 4
+#define PRIMITIVE_TYPE_CYLINDER 5
 
 #define OPERATION_TYPE_ELONGATE 1
 #define OPERATION_TYPE_ROUND 2
@@ -28,6 +29,7 @@ struct SDFGPUData
     int Flip; // whether to multiply by -1, turns inside out
     float3 MinBounds; // only used by sdfmesh, near bottom left
     float3 MaxBounds; // only used by sdfmesh, far top right
+    float Smoothing;
     
     bool IsMesh()
     {
@@ -62,7 +64,7 @@ struct SDFGPUData
 
 struct Settings
 {
-    float Smoothing; // the input to the smooth min function
+    //float Smoothing; // the input to the smooth min function
     float NormalSmoothing; // the 'epsilon' value for computing the gradient, affects how smoothed out the normals are
 };
 
@@ -298,6 +300,8 @@ float sdf(float3 p, SDFGPUData data)
                 return sdf_torus(p, data.Data.xy) * data.Flip;
             case PRIMITIVE_TYPE_CUBOID:
                 return sdf_roundedBox(p, data.Data.xyz, data.Data.w) * data.Flip;
+            case PRIMITIVE_TYPE_CYLINDER:
+                return sdf_cylinder(p, data.Data.x, data.Data.y) * data.Flip;
             default:
                 return sdf_boxFrame(p, data.Data.xyz, data.Data.w) * data.Flip;
         }
@@ -345,7 +349,7 @@ float Map(float3 p)
 {
     float minDist = 10000000.0;
     
-    float smoothing = _Settings[0].Smoothing;
+    //float smoothing = _Settings[0].Smoothing;
     
     [fastopt]
     for (int i = 0; i < _SDFDataCount; i++)
@@ -373,9 +377,12 @@ float Map(float3 p)
         else
         {
             if (data.Operation == 0)
-                minDist = sdf_op_smin(minDist, sdf(p, data), smoothing);
+                minDist = sdf_op_smin(minDist, sdf(p, data), data.Smoothing);
+            else if (data.Operation == 1)
+                minDist = sdf_op_smoothSubtraction(sdf(p, data), minDist, data.Smoothing);
             else
-                minDist = sdf_op_smoothSubtraction(sdf(p, data), minDist, smoothing);
+                minDist = sdf_op_smoothIntersection(sdf(p, data), minDist, data.Smoothing);
+                
         }
     }
     

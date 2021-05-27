@@ -1,18 +1,9 @@
-﻿#pragma kernel SurfaceNets_Map
-#pragma kernel SurfaceNets_GenerateVertices
-#pragma kernel SurfaceNets_NumberVertices
-#pragma kernel SurfaceNets_GenerateTriangles
-#pragma kernel SurfaceNets_BuildIndexBuffer
-#pragma kernel SurfaceNets_AddIntermediateVerticesToIndexBuffer
-
-#pragma multi_compile __ ISOSURFACETYPE_DUAL_CONTOURING/*ISOSURFACETYPE_SURFACE_NETS ISOSURFACETYPE_DUAL_CONTOURING*/
-#pragma multi_compile ___ EDGEINTERSECTIONTYPE_INTERPOLATION/* EDGEINTERSECTIONTYPE_BINARY_SEARCH*/
-#pragma multi_compile ____ APPLY_GRADIENT_DESCENT
-#pragma multi_compile ______ OVERRIDE_QEF_SETTINGS
-//#define ISOSURFACETYPE_DUAL_CONTOURING
-
-int _QEFSweeps;
-float _QEFPseudoInverseThreshold;
+﻿#pragma kernel Isosurface_Map
+#pragma kernel Isosurface_GenerateVertices
+#pragma kernel Isosurface_NumberVertices
+#pragma kernel Isosurface_GenerateTriangles
+#pragma kernel Isosurface_BuildIndexBuffer
+#pragma kernel Isosurface_AddIntermediateVerticesToIndexBuffer
 
 #include "../Common.hlsl"
 #include "../QEFFunctions.cginc"
@@ -37,6 +28,9 @@ float _QEFPseudoInverseThreshold;
 #define G 6
 #define H 7
 
+#define ISOSURFACE_EXTRACTION_TYPE__SURFACENETS 0
+#define ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING 1
+
 // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
 #define VERTEX_COUNT _Counter[0]
 #define TRIANGLE_COUNT _Counter[3]
@@ -45,22 +39,35 @@ float _QEFPseudoInverseThreshold;
 #define INTERMEDIATE_VERTEX_COUNT _Counter[12]
 #define INTERMEDIATE_VERTEX_COUNT_DIV_64 _Counter[15]
 
-static int edges[] =
+static int edges[12][2] =
 {
-        A, B,
-        A, C,
-        A, E,
-        B, D, //      g-------h
-        B, F, //     /|      /|
-        C, D, //    / |     / |
-        C, G, //   c--|----d  |
-        D, H, //   |  e----|--f
-        E, F, //   | /     | /
-        E, G, //   a-------b
-        F, H,
-        G, H
+    { A, B },
+    { A, C },
+    { A, E },
+    { B, D }, //      g-------h
+    { B, F }, //     /|      /|
+    { C, D }, //    / |     / |
+    { C, G }, //   c--|----d  |
+    { D, H }, //   |  e----|--f
+    { E, F }, //   | /     | /
+    { E, G }, //   a-------b
+    { F, H },
+    { G, H }
 };
-    
+
+
+static float3 unitCorners[8] =
+{
+    float3(-1.0f, -1.0f, -1.0f),    // A
+    float3(1.0f, -1.0f, -1.0f),     // B
+    float3(-1.0f, 1.0f, -1.0f),     // C
+    float3(1.0f, 1.0f, -1.0f),      // D
+    float3(-1.0f, -1.0f, 1.0f),     // E
+    float3(1.0f, -1.0f, 1.0f),      // F
+    float3(-1.0f, 1.0f, 1.0f),      // G
+    float3(1.0f, 1.0f, 1.0f),       // H
+};
+
 float _NudgeVerticesToAverageNormalScalar; // how much to give vertices an extra push in the direction of the average normal of their cells edge intersections. combined with gradient descent, this can give better edges
 float _NudgeMaxMagnitude; // how much to give vertices an extra push in the direction of the average normal of their cells edge intersections. combined with gradient descent, this can give better edges
 float _ConstrainToCellUnits; // after QEF, the resulting vertex can be out of cell bounds. this controls how much leeway this gets before falling back to surface nets
@@ -68,6 +75,7 @@ int _BinarySearchIterations;
 int _GradientDescentIterations;
 float _VisualNormalSmoothing;
 float _MaxAngleCosine; // if the dot product of the vertex normal and the triangle cross product is less than this, we need to generate a new vertex with a new normal. this gives better normals at sharp edges
+int _IsosurfaceExtractionType;
 
 float4x4 _GroupTransform;
 
@@ -116,7 +124,7 @@ int CellCoordinateToIndex(int x, int y, int z)
 }
 
 [numthreads(4, 4, 4)]
-void SurfaceNets_Map(uint3 id : SV_DispatchThreadID)
+void Isosurface_Map(uint3 id : SV_DispatchThreadID)
 {
     int x = id.x;
     int y = id.y;
@@ -128,127 +136,44 @@ void SurfaceNets_Map(uint3 id : SV_DispatchThreadID)
     _Samples[index] = Map(vertex);
 }
 
-// returns the point of surface intersection between the edge points at the given indices,
-bool GetEdgeSurfaceIntersection(int index_from, int index_to, out float3 intersectionPoint)
+bool TryGetEdgeSurfaceIntersection(float sample_from, float sample_to, float3 localPoint_from, float3 localPoint_to, float3 localOrigin, out float3 localIntersectionPoint)
 {
-    intersectionPoint = float3(0, 0, 0);
-            
-    float sample_from = _Samples[index_from];
-    float sample_to = _Samples[index_to];
+    localIntersectionPoint = float3(0, 0, 0);
     
-    if (sign(sample_from) == sign(sample_to))
+    if (sign(sample_to) == sign(sample_from))
         return false;
     
-    float3 from = IndexToVertex(index_from);
-    float3 to = IndexToVertex(index_to);
-    
-#ifdef EDGEINTERSECTIONTYPE_INTERPOLATION
-    float t = sample_from / (sample_from - sample_to);
-    intersectionPoint = lerp(from, to, t);
-    return true;
-#else
-    float3 inside, outside;
-    
-    if (sample_from < 0.0)
+    if (_BinarySearchIterations <= 0)
     {
-        inside = from;
-        outside = to;
+        float t = sample_from / (sample_from - sample_to);
+        localIntersectionPoint = lerp(localPoint_from, localPoint_to, t);
     }
     else
     {
-        inside = to;
-        outside = from;
+        localIntersectionPoint = (localPoint_from + localPoint_to) * 0.5;
+        
+        [fastopt]
+        for (int i = 0; i < _BinarySearchIterations; i++)
+        {
+            float sample_new = Map(localOrigin + localIntersectionPoint);
+            if (sign(sample_to) == sign(sample_new))  // new point is on same side as sample_to
+            {
+                sample_to = sample_new;
+                localPoint_to = localIntersectionPoint;
+            }
+            if (sign(sample_from) == sign(sample_new))  // new point is on same side as sample_from
+            {
+                sample_from = sample_new;
+                localPoint_from = localIntersectionPoint;
+            }
+            
+            localIntersectionPoint = (localPoint_from + localPoint_to) * 0.5;
+        }
     }
     
-    [fastopt]
-    for (int i = 0; i < _BinarySearchIterations; i++)
-    {
-        float3 midpoint = (inside + outside) * 0.5f;
-        float sample_midpoint = Map(midpoint);
-            
-        if (sample_midpoint > 0.0) // midpoint is outside the surface
-        {
-            outside = midpoint;
-        }
-        else // midpoint is inside the surface
-        {
-            inside = midpoint;
-        }
-    }
-
-    intersectionPoint = (inside + outside) * 0.5f;
     return true;
-#endif
 }
 
-//// http://www.inf.ufrgs.br/%7Ecomba/papers/thesis/diss-leonardo.pdf (page 42)
-//float3 GetSurfacePointByParticleIteration(float3 currentPoint, int pointCount, int vertices[8], float3 edgePoints[12], float3 edgeNormals[12])
-//{
-//    /*     g-------h
-//    *     /|      /|
-//    *    / |     / |
-//    *   c--|----d  |
-//    *   |  e----|--f
-//    *   | /     | /
-//    *   a-------b
-//    */
-        
-//    // for each permutation cell corner and edge intersection, sum up the displacement vectors from that corner to 
-//    // the plane defined by the edge intersection point and normal.
-//    // each corner now has a 'force'.
-//    // we use trilinear interpolation to interpolate those forces in the whole cell
-
-//    float3 force_a, force_b, force_c, force_d, force_e, force_f, force_g, force_h;
-//    force_a = force_b = force_c = force_d = force_e = force_f = force_g = force_h = float3(0, 0, 0);
-    
-//    float3 corner_a = IndexToVertex(vertices[A]);
-//    float3 corner_b = IndexToVertex(vertices[B]);
-//    float3 corner_c = IndexToVertex(vertices[C]);
-//    float3 corner_d = IndexToVertex(vertices[D]);
-//    float3 corner_e = IndexToVertex(vertices[E]);
-//    float3 corner_f = IndexToVertex(vertices[F]);
-//    float3 corner_g = IndexToVertex(vertices[G]);
-//    float3 corner_h = IndexToVertex(vertices[H]);
-    
-//    for (int i = 0; i < pointCount; i++)
-//    {
-//        float3 normal = edgeNormals[i];
-//        float3 p = edgePoints[i];
-
-//        // just projecting each cell corner onto the plane formed by the edge intersection and normal
-//        force_a -= normal * dot(normal, corner_a - p);
-//        force_b -= normal * dot(normal, corner_b - p);
-//        force_c -= normal * dot(normal, corner_c - p);
-//        force_d -= normal * dot(normal, corner_d - p);
-//        force_e -= normal * dot(normal, corner_e - p);
-//        force_f -= normal * dot(normal, corner_f - p);
-//        force_g -= normal * dot(normal, corner_g - p);
-//        force_h -= normal * dot(normal, corner_h - p);
-//    }
-        
-//    float startSign = sign(TransformedMap(currentPoint));
-
-//    // starting from the mass point (i.e., the point given by naive surface nets),
-//    // add the force calculated above, then recalculate the force, add it again, etc,
-//    // for a fixed number of iterations or until we hit a sign change meaning we've found the surface.
-//    for (uint j = 0; j < _SchmitzParticleIterations; j++)
-//    {
-//        float3 frac = float3(invLerp(A.x, H.x, currentPoint.x), invLerp(corner_a.y, corner_h.y, currentPoint.y), invLerp(corner_a.z, corner_h.z, currentPoint.z));
-//        float3 force = TrilinearInterpolate(frac, force_a, force_b, force_c, force_d, force_e, force_f, force_g, force_h);
-            
-//        currentPoint += (force * _SchmitzParticleStepScalar);
-
-//        if (_SchmitzParticleClampToCell)
-//            currentPoint = float3(clamp(currentPoint.x, corner_a.x, corner_h.x), clamp(currentPoint.y, corner_a.y, corner_h.y), clamp(currentPoint.z, corner_a.z, corner_h.z));
-       
-//        // check if we just crossed the surface
-//        if (sign(TransformedMap(currentPoint)) != startSign)
-//            break;
-//    }
-
-//    return currentPoint;
-//}
-    
 
 bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cubeIndex, out float3 normal)
 {
@@ -279,6 +204,8 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     // if the vertex is valid (not out of bounds) and its sign is different from the first vertex,
     // then this voxel contains surface
     // (note: i added vertex 'a' to the array, but i don't want to check it here because i checked it above while declaring 'isNegative', so i start at 1)
+    
+    // todo: can probably do this in the map kernel and just not dispatch on this cell at all
     [fastopt]
     for (int i = 1; i < 8; i++)
     {
@@ -298,105 +225,69 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     // which intersect the edge intersection points and are tangent to their normals
     // ref: https://bonsairobo.medium.com/smooth-voxel-mapping-a-technical-deep-dive-on-real-time-surface-nets-and-texturing-ef06d0f8ca14
     
-#ifdef ISOSURFACETYPE_DUAL_CONTOURING
-    // qef stuff
-    float4 pointaccum = float4(0, 0, 0, 0);
-    mat3x3_tri ATA = { 0, 0, 0, 0, 0, 0 };
-    float4 Atb = float4(0, 0, 0, 0);
-    float btb = 0;
-#endif
+    float halfCellSize = 0.5 * _CellSize;
+    float3 localCellOrigin = IndexToVertex(vertices[A]) + float3(halfCellSize, halfCellSize, halfCellSize);
     
-    float3 sumNormal = float3(0, 0, 0);
-    float3 sumVertex = float3(0, 0, 0);
+    int edgeIntersectionCount = 0;
+    float3 averageEdgeIntersectionPoint = float3(0.0, 0.0, 0.0);
+    float3 localEdgeIntersectionPoints[12];
     
-    int edgeCount = 0;
-    float3 edgeIntersectionPoint;
-    
-    // iterate over each edge
+    // iterate over each edge, checking if it intersects with the surface.
     [fastopt]
-    for (int j = 0; j < 24; j += 2)
+    for (int j = 0; j < 12; j++)
     {
-        if (GetEdgeSurfaceIntersection(vertices[edges[j]], vertices[edges[j + 1]], edgeIntersectionPoint))
+        int from = edges[j][0];
+        int to = edges[j][1];
+        
+        float sample_from = _Samples[vertices[from]];
+        float sample_to = _Samples[vertices[to]];
+
+        float3 localEdgeIntersectionPoint;
+        if (TryGetEdgeSurfaceIntersection(sample_from, sample_to, unitCorners[from] * halfCellSize, unitCorners[to] * halfCellSize, localCellOrigin, localEdgeIntersectionPoint))
         {
-            float3 edgeNormal = MapNormal(edgeIntersectionPoint, -1.0);
-            
-#ifdef ISOSURFACETYPE_DUAL_CONTOURING
-            qef_add(edgeNormal, edgeIntersectionPoint, ATA, Atb, pointaccum, btb);
-#else
-            sumVertex += edgeIntersectionPoint;
-#endif
-            
-            edgeCount++;
-            sumNormal += edgeNormal;
+            averageEdgeIntersectionPoint += localEdgeIntersectionPoint;
+            localEdgeIntersectionPoints[edgeIntersectionCount++] = localEdgeIntersectionPoint;
         }
     }
     
-    float3 massPoint = sumVertex / edgeCount;
+    if (edgeIntersectionCount <= 0)
+        return false;
     
-#ifdef ISOSURFACETYPE_DUAL_CONTOURING
-    float outOfBoundsTolerance = _ConstrainToCellUnits * _CellSize;
+    averageEdgeIntersectionPoint /= edgeIntersectionCount;
     
-    float3 a = IndexToVertex(vertices[A]);
-    float3 h = IndexToVertex(vertices[H]);
+    float epsilon = _CellSize * 0.01;
+    float3 localEdgeIntersectionNormals[12];
     
-    float4 solvedPoint;
-    qef_solve(ATA, Atb, pointaccum, solvedPoint);
-    
-    // how far out of cell surface point can get before
-    // we switch to using the surface nets solution
-    if (solvedPoint.x < (a.x - outOfBoundsTolerance) || solvedPoint.x > (h.x + outOfBoundsTolerance) ||
-        solvedPoint.y < (a.y - outOfBoundsTolerance) || solvedPoint.y > (h.y + outOfBoundsTolerance) ||
-        solvedPoint.z < (a.z - outOfBoundsTolerance) || solvedPoint.z > (h.z + outOfBoundsTolerance))
+    [fastopt] 
+    for (int k = 0; k < edgeIntersectionCount; k++)
     {
-        surfacePoint = massPoint;
-    }
-    else
-    {
-        surfacePoint = solvedPoint.xyz;
+        localEdgeIntersectionNormals[k] = MapNormal(localCellOrigin + localEdgeIntersectionPoints[k], epsilon);
     }
     
-    sumNormal = normalize(sumNormal);
-    
-    //float dotWithMassPoint = max(0, dot(sumNormal, normalize(surfacePoint - massPoint)));
-    float dotWithMassPoint = dot(sumNormal, normalize(surfacePoint - massPoint));
-    
-    float3 nudgeDir = sumNormal * _NudgeVerticesToAverageNormalScalar * dotWithMassPoint;
-    float nudgeDirMag = min(length(nudgeDir), _NudgeMaxMagnitude);
-    
-    // clamp magnitude. ternary operator prevents div by zero
-    nudgeDir = nudgeDirMag <= 0 ? nudgeDir : (normalize(nudgeDir) * nudgeDirMag);
-    
-    surfacePoint += nudgeDir;
-    
-#else
-    surfacePoint = massPoint;
-#endif
-    
-#ifdef APPLY_GRADIENT_DESCENT
-    for (int gIterations = 0; gIterations < _GradientDescentIterations; gIterations++)
+    if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__SURFACENETS)
     {
-        surfacePoint -= (MapNormal(surfacePoint, -1.0) * Map(surfacePoint));
+        surfacePoint = localCellOrigin + averageEdgeIntersectionPoint;
     }
-#endif    
+    else if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING)
+    {
+        surfacePoint = localCellOrigin + SolveQEF(edgeIntersectionCount, localEdgeIntersectionNormals, localEdgeIntersectionPoints, averageEdgeIntersectionPoint);
+    }
+    
+    for (int l = 0; l < _GradientDescentIterations; l++)
+    {
+        surfacePoint -= (MapNormal(surfacePoint, epsilon) * Map(surfacePoint));
+    }
     
     normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
     
     return true;
 }
 
-
-bool TryGetSurfacePoint(int inCubeIndex, out float3 surfacePoint, out float3 normal)
-{
-    int outIndex;
-    float3 coords = IndexToCellCoordinate(inCubeIndex);
-    return TryGetSurfacePoint(coords.x, coords.y, coords.z, surfacePoint, outIndex, normal);
-}
-
 RWStructuredBuffer<CellData> _CellDataPoints;
 
 // this kernel is dispatched per cell in the form x, y, z
 [numthreads(4, 4, 4)]
-void SurfaceNets_GenerateVertices(uint3 id : SV_DispatchThreadID)
+void Isosurface_GenerateVertices(uint3 id : SV_DispatchThreadID)
 {
     int x = id.x;
     int y = id.y;
@@ -440,7 +331,7 @@ float4x4 _MeshTransform;
 
 // called for each surface vertex, this kernel just tells each vertex its own index
 [numthreads(64, 1, 1)]
-void SurfaceNets_NumberVertices(uint3 id : SV_DispatchThreadID)
+void Isosurface_NumberVertices(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= ((uint) VERTEX_COUNT))
         return;
@@ -590,7 +481,7 @@ RWStructuredBuffer<int> _ProceduralArgs;
 // the purpose of this kernel is to generate up to 6 triangles (3 quads, one for each axis) 
 // for each surface point (which will become the mesh vertices)
 [numthreads(64, 1, 1)]
-void SurfaceNets_GenerateTriangles(uint3 id : SV_DispatchThreadID)
+void Isosurface_GenerateTriangles(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= ((uint) VERTEX_COUNT))
         return;
@@ -617,8 +508,8 @@ void SurfaceNets_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     
     int bounds = _PointsPerSide - 1;
     
-    if (x >= bounds || y >= bounds || z >= bounds)
-        return;
+    //if (x >= bounds || y >= bounds || z >= bounds)
+    //    return;
     
     int cube0;
     int cube1;
@@ -653,7 +544,7 @@ StructuredBuffer<TriangleData> _TriangleDataPoints_Structured;
 // dispatched for each triangle, this kernel unpacks the triangle data structs
 // and lays them out sequentially
 [numthreads(64, 1, 1)]
-void SurfaceNets_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
+void Isosurface_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= ((uint) TRIANGLE_COUNT))
         return;
@@ -718,14 +609,6 @@ void SurfaceNets_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
     _MeshTriangles[id.x * 3 + 1] = index_2;
     _MeshTriangles[id.x * 3 + 2] = index_3;
     
-    //a.Normal = normalize(lerp(a.Normal, normalize(b.Normal + c.Normal), 0.5));
-    //b.Normal = normalize(lerp(b.Normal, normalize(a.Normal + c.Normal), 0.5));
-    //c.Normal = normalize(lerp(c.Normal, normalize(a.Normal + b.Normal), 0.5));
-    
-    //_VertexDataPoints_Structured[index_1] = a;
-    //_VertexDataPoints_Structured[index_2] = b;
-    //_VertexDataPoints_Structured[index_3] = c;
-    
     InterlockedMax(INTERMEDIATE_VERTEX_COUNT_DIV_64, ceil(INTERMEDIATE_VERTEX_COUNT / 64.0));
 }
 
@@ -734,7 +617,7 @@ StructuredBuffer<NewVertexData> _IntermediateVertexBuffer_Structured;
 // this is an optional final step which switches out some of the mesh vertices for newly generated ones
 // in order to achieve sharp edges (according to a specified angle threshold)
 [numthreads(64, 1, 1)]
-void SurfaceNets_AddIntermediateVerticesToIndexBuffer(uint3 id : SV_DispatchThreadID)
+void Isosurface_AddIntermediateVerticesToIndexBuffer(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= ((uint) INTERMEDIATE_VERTEX_COUNT))
         return;

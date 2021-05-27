@@ -3,7 +3,6 @@ using UnityEngine;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using UnityEngine.Rendering;
-using System.Collections.Generic;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -25,18 +24,12 @@ namespace IsoMesh
         {
             public static readonly int PointsPerSide_Int = Shader.PropertyToID("_PointsPerSide");
             public static readonly int CellSize_Float = Shader.PropertyToID("_CellSize");
-
-            public static readonly int ConstrainToCellUnits_Float = Shader.PropertyToID("_ConstrainToCellUnits");
+            
             public static readonly int BinarySearchIterations_Int = Shader.PropertyToID("_BinarySearchIterations");
+            public static readonly int IsosurfaceExtractionType_Int = Shader.PropertyToID("_IsosurfaceExtractionType");
             public static readonly int MaxAngleCosine_Float = Shader.PropertyToID("_MaxAngleCosine");
             public static readonly int VisualNormalSmoothing = Shader.PropertyToID("_VisualNormalSmoothing");
             public static readonly int GradientDescentIterations_Int = Shader.PropertyToID("_GradientDescentIterations");
-
-            public static readonly int NudgeVerticesToAverageNormalScalar_Float = Shader.PropertyToID("_NudgeVerticesToAverageNormalScalar");
-            public static readonly int NudgeMaxMagnitude_Float = Shader.PropertyToID("_NudgeMaxMagnitude");
-
-            public static readonly int QEFSweeps_Int = Shader.PropertyToID("_QEFSweeps");
-            public static readonly int QEFPseudoInverseThreshold_Float = Shader.PropertyToID("_QEFPseudoInverseThreshold");
 
             public static readonly int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
             public static readonly int Transform_Matrix4x4 = Shader.PropertyToID("_GroupTransform");
@@ -66,12 +59,12 @@ namespace IsoMesh
 
         private struct Kernels
         {
-            public const string MapKernelName = "SurfaceNets_Map";
-            private const string GenerateVerticesKernelName = "SurfaceNets_GenerateVertices";
-            private const string NumberVerticesKernelName = "SurfaceNets_NumberVertices";
-            private const string GenerateTrianglesKernelName = "SurfaceNets_GenerateTriangles";
-            public const string BuildIndexBufferKernelName = "SurfaceNets_BuildIndexBuffer";
-            private const string AddIntermediateVerticesToIndexBufferKernelName = "SurfaceNets_AddIntermediateVerticesToIndexBuffer";
+            public const string MapKernelName = "Isosurface_Map";
+            private const string GenerateVertices_KernelName = "Isosurface_GenerateVertices";
+            private const string NumberVerticesKernelName = "Isosurface_NumberVertices";
+            private const string GenerateTrianglesKernelName = "Isosurface_GenerateTriangles";
+            public const string BuildIndexBufferKernelName = "Isosurface_BuildIndexBuffer";
+            private const string AddIntermediateVerticesToIndexBufferKernelName = "Isosurface_AddIntermediateVerticesToIndexBuffer";
 
             public int Map { get; }
             public int GenerateVertices { get; }
@@ -83,7 +76,7 @@ namespace IsoMesh
             public Kernels(ComputeShader shader)
             {
                 Map = shader.FindKernel(MapKernelName);
-                GenerateVertices = shader.FindKernel(GenerateVerticesKernelName);
+                GenerateVertices = shader.FindKernel(GenerateVertices_KernelName);
                 NumberVertices = shader.FindKernel(NumberVerticesKernelName);
                 GenerateTriangles = shader.FindKernel(GenerateTrianglesKernelName);
                 BuildIndexBuffer = shader.FindKernel(BuildIndexBufferKernelName);
@@ -104,11 +97,6 @@ namespace IsoMesh
         private const int TRIANGLE_COUNTER_DIV_64 = 9;
         private const int INTERMEDIATE_VERTEX_COUNTER = 12;
         private const int INTERMEDIATE_VERTEX_COUNTER_DIV_64 = 15;
-
-        public const string DualContouringKeyword = "ISOSURFACETYPE_DUAL_CONTOURING";
-        public const string InterpolationKeyword = "EDGEINTERSECTIONTYPE_INTERPOLATION";
-        public const string ApplyGradientDescentKeyword = "APPLY_GRADIENT_DESCENT";
-        public const string OverrideQEFSettingsKeyword = "OVERRIDE_QEF_SETTINGS";
 
         private const string ComputeShaderResourceName = "Compute_IsoSurfaceExtraction";
 
@@ -141,12 +129,19 @@ namespace IsoMesh
                 if (m_computeShader)
                     return m_computeShader;
 
+                Debug.Log("Attempting to load resource: " + ComputeShaderResourceName);
+
                 m_computeShader = Resources.Load<ComputeShader>(ComputeShaderResourceName);
+
+                if (!m_computeShader)
+                    Debug.Log("Failed to load.");
+                else
+                    Debug.Log("Successfully loaded.");
 
                 return m_computeShader;
             }
         }
-        
+
         private ComputeShader m_computeShaderInstance;
 
         [SerializeField]
@@ -170,7 +165,8 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        private GameObject m_meshFilterGameObject;
+        [UnityEngine.Serialization.FormerlySerializedAs("m_meshGameObject")]
+        private GameObject m_meshGameObject;
 
         [SerializeField]
         private MeshFilter m_meshFilter;
@@ -178,16 +174,13 @@ namespace IsoMesh
         {
             get
             {
-                if (m_meshFilter)
-                    return m_meshFilter;
-
-                if (TryGetOrCreateMeshGameObject())
+                if (!m_meshFilter && TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
                 {
-                    m_meshFilter = m_meshFilterGameObject.GetOrAddComponent<MeshFilter>();
+                    m_meshFilter = meshGameObject.GetOrAddComponent<MeshFilter>();
                     return m_meshFilter;
                 }
 
-                return null;
+                return m_meshFilter;
             }
         }
 
@@ -197,13 +190,13 @@ namespace IsoMesh
         {
             get
             {
-                if (!TryGetOrCreateMeshGameObject())
-                    return null;
-
-                if (m_meshCollider || m_meshFilterGameObject.TryGetComponent(out m_meshCollider))
+                if (!m_meshCollider && TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
+                {
+                    m_meshCollider = meshGameObject.GetComponent<MeshCollider>();
                     return m_meshCollider;
+                }
 
-                return null;
+                return m_meshCollider;
             }
         }
 
@@ -213,13 +206,13 @@ namespace IsoMesh
         {
             get
             {
-                if (!TryGetOrCreateMeshGameObject())
-                    return null;
-
-                if (m_meshRenderer || m_meshFilterGameObject.TryGetComponent(out m_meshRenderer))
+                if (!m_meshRenderer && TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
+                {
+                    m_meshRenderer = meshGameObject.GetComponent<MeshRenderer>();
                     return m_meshRenderer;
+                }
 
-                return null;
+                return m_meshRenderer;
             }
         }
 
@@ -231,19 +224,22 @@ namespace IsoMesh
 
         [SerializeField]
         private MainSettings m_mainSettings = new MainSettings();
+        public MainSettings MainSettings => m_mainSettings;
 
         [SerializeField]
         private VoxelSettings m_voxelSettings = new VoxelSettings();
+        public VoxelSettings VoxelSettings => m_voxelSettings;
 
         [SerializeField]
         private AlgorithmSettings m_algorithmSettings = new AlgorithmSettings();
+        public AlgorithmSettings AlgorithmSettings => m_algorithmSettings;
 
         private bool m_initialized = false;
 
         [SerializeField]
         private bool m_showGrid = false;
         public bool ShowGrid => m_showGrid;
-        
+
         private bool m_isEnabled = false;
 
         #endregion
@@ -260,7 +256,7 @@ namespace IsoMesh
         {
             m_isEnabled = true;
             m_initialized = false;
-            
+
             if (Group.IsReady)
             {
                 InitializeComputeShaderSettings();
@@ -298,10 +294,10 @@ namespace IsoMesh
 
         private void Update()
         {
-            if ((transform.hasChanged || (TryGetOrCreateMeshGameObject() && m_meshFilterGameObject.transform.hasChanged)) && Group.IsReady && !Group.IsEmpty && Group.IsRunning)
+            if ((transform.hasChanged || (m_mainSettings.OutputMode == OutputMode.MeshFilter && TryGetOrCreateMeshGameObject(out GameObject meshGameObject) && meshGameObject.transform.hasChanged)) && Group.IsReady && !Group.IsEmpty && Group.IsRunning)
             {
-                if (TryGetOrCreateMeshGameObject())
-                    m_meshFilterGameObject.transform.hasChanged = false;
+                if (TryGetOrCreateMeshGameObject(out meshGameObject))
+                    meshGameObject.transform.hasChanged = false;
 
                 SendTransformToGPU();
                 UpdateMesh();
@@ -309,8 +305,8 @@ namespace IsoMesh
 
             transform.hasChanged = false;
 
-            if (m_meshFilterGameObject)
-                m_meshFilterGameObject.transform.hasChanged = false;
+            if (m_meshGameObject)
+                m_meshGameObject.transform.hasChanged = false;
         }
 
         private void LateUpdate()
@@ -318,7 +314,7 @@ namespace IsoMesh
             if (!m_initialized || !Group.IsReady || Group.IsEmpty)
                 return;
 
-            if (m_mainSettings.OutputMode == OutputMode.Procedural)
+            if (m_mainSettings.OutputMode == OutputMode.Procedural && m_mainSettings.ProceduralMaterial && m_proceduralArgsBuffer != null && m_proceduralArgsBuffer.IsValid() && m_mainSettings.AutoUpdate)
                 Graphics.DrawProceduralIndirect(m_mainSettings.ProceduralMaterial, m_bounds, MeshTopology.Triangles, m_proceduralArgsBuffer, properties: m_propertyBlock);
         }
 
@@ -490,24 +486,32 @@ namespace IsoMesh
                 MeshCollider.sharedMesh = m_mesh;
         }
 
-        private bool TryGetOrCreateMeshGameObject()
+        private bool TryGetOrCreateMeshGameObject(out GameObject meshGameObject)
         {
-            if (m_mainSettings.OutputMode != OutputMode.MeshFilter)
+            meshGameObject = null;
+
+            // this looks weird, but remember that unity overrides the behaviour of 
+            // implicit boolean casting to mean "check whether the underlying c++ object is null"
+            if (!this)
                 return false;
 
-            if (m_meshFilterGameObject)
+            meshGameObject = m_meshGameObject;
+
+            if (meshGameObject)
                 return true;
 
-            m_meshFilterGameObject = new GameObject(name + " Generated Mesh");
-            m_meshFilterGameObject.transform.SetParent(transform);
-            m_meshFilterGameObject.transform.Reset();
+            meshGameObject = new GameObject(name + " Generated Mesh");
+            meshGameObject.transform.SetParent(transform);
+            meshGameObject.transform.Reset();
+
+            m_meshGameObject = meshGameObject;
 
             return true;
         }
 
         public void DereferenceMeshObject()
         {
-            m_meshFilterGameObject = null;
+            m_meshGameObject = null;
             m_meshFilter = null;
             m_meshRenderer = null;
         }
@@ -534,27 +538,17 @@ namespace IsoMesh
         private void InitializeComputeShaderSettings()
         {
             if (m_initialized || !m_isEnabled)
-            {
-                Debug.Log("Returning before initializing.");
-                Debug.Log("m_initialized = " + m_initialized);
-                Debug.Log("m_isEnabled = " + m_isEnabled);
                 return;
-            }
 
             ReleaseUnmanagedMemory();
-
-            //bool wasAutoUpdating = m_mainSettings.AutoUpdate;
-            //m_autoUpdate = false;
-
+            
             m_isInitializing = true;
             m_initialized = true;
 
             m_computeShaderInstance = Instantiate(ComputeShader);
 
             SendTransformToGPU();
-
-            ResendKeywords();
-
+            
             m_kernels = new Kernels(ComputeShader);
 
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
@@ -574,17 +568,13 @@ namespace IsoMesh
 
             // ensuring all these setting variables are sent to the gpu.
             OnCellSizeChanged();
-            OnConstrainToCellUnitsChanged();
             OnBinarySearchIterationsChanged();
+            OnIsosurfaceExtractionTypeChanged();
             OnVisualNormalSmoothingChanged();
             OnMaxAngleToleranceChanged();
             OnGradientDescentIterationsChanged();
-            OnNudgeSettingsChanged();
             OnOutputModeChanged();
 
-            // set autoUpdate back to its value before this function was called.
-            // we temporarily disable autoupdate during this function
-            //m_autoUpdate = wasAutoUpdating;
             m_isInitializing = false;
         }
 
@@ -767,18 +757,7 @@ namespace IsoMesh
                 UpdateMesh();
             }
         }
-
-        /// <summary>
-        /// Set all the shader keywords. This is called by a lot of attributes as well as during the intitialization.
-        /// </summary>
-        private void ResendKeywords()
-        {
-            OnQEFSettingsOverrideChanged();
-            OnIsosurfaceExtractionTypeChanged();
-            OnEdgeIntersectionTypeChanged();
-            OnApplyGradientDescentChanged();
-        }
-
+        
         /// <summary>
         /// Dispatch all the compute kernels in the correct order. Basically... do the thing.
         /// </summary>
@@ -789,7 +768,7 @@ namespace IsoMesh
                 return;
 
             ResetCounters();
-            
+
             DispatchMap();
             DispatchGenerateVertices();
             DispatchNumberVertices();
@@ -820,7 +799,7 @@ namespace IsoMesh
         private void DispatchMap()
         {
             UpdateMapKernels(Properties.Settings_StructuredBuffer, Group.SettingsBuffer);
-            
+
             m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Map, out uint x, out uint y, out uint z);
             m_computeShaderInstance.Dispatch(m_kernels.Map, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
         }
@@ -862,10 +841,55 @@ namespace IsoMesh
 
             m_computeShaderInstance.SetMatrix(Properties.Transform_Matrix4x4, transform.localToWorldMatrix);
 
-            if (TryGetOrCreateMeshGameObject())
-                m_computeShaderInstance.SetMatrix(Properties.MeshTransform_Matrix4x4, m_meshFilterGameObject.transform.worldToLocalMatrix);
+            if (m_mainSettings.OutputMode == OutputMode.MeshFilter && TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
+                m_computeShaderInstance.SetMatrix(Properties.MeshTransform_Matrix4x4, meshGameObject.transform.worldToLocalMatrix);
             else if (m_mainSettings.OutputMode == OutputMode.Procedural)
                 m_computeShaderInstance.SetMatrix(Properties.MeshTransform_Matrix4x4, Matrix4x4.identity);
+        }
+
+        public void SetVoxelSettings(VoxelSettings voxelSettings)
+        {
+            m_isInitializing = true;
+            m_voxelSettings.CopySettings(voxelSettings);
+
+            OnCellCountChanged();
+            OnCellSizeChanged();
+
+            m_isInitializing = false;
+
+            if (m_mainSettings.AutoUpdate)
+                UpdateMesh();
+        }
+
+        public void SetMainSettings(MainSettings mainSettings)
+        {
+            m_isInitializing = true;
+            m_mainSettings.CopySettings(mainSettings);
+
+            OnOutputModeChanged();
+
+            m_isInitializing = false;
+
+            if (m_mainSettings.AutoUpdate)
+                UpdateMesh();
+        }
+
+        public void SetAlgorithmSettings(AlgorithmSettings algorithmSettings)
+        {
+            m_isInitializing = true;
+            m_algorithmSettings.CopySettings(algorithmSettings);
+            
+            OnVisualNormalSmoothingChanged();
+            OnMaxAngleToleranceChanged();
+            OnGradientDescentIterationsChanged();
+            OnBinarySearchIterationsChanged();
+            OnIsosurfaceExtractionTypeChanged();
+            OnOutputModeChanged();
+
+            m_isInitializing = false;
+
+            if (m_mainSettings.AutoUpdate)
+                UpdateMesh();
         }
 
         public void OnCellCountChanged()
@@ -893,18 +917,7 @@ namespace IsoMesh
             if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
         }
-
-        public void OnConstrainToCellUnitsChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetFloat(Properties.ConstrainToCellUnits_Float, m_algorithmSettings.ConstrainToCellUnits);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
+        
         public void OnVisualNormalSmoothingChanged()
         {
             if (!m_initialized || !m_isEnabled)
@@ -931,7 +944,7 @@ namespace IsoMesh
         {
             if (!m_initialized || !m_isEnabled)
                 return;
-
+            
             m_computeShaderInstance.SetInt(Properties.GradientDescentIterations_Int, m_algorithmSettings.GradientDescentIterations);
 
             if (m_mainSettings.AutoUpdate && !m_isInitializing)
@@ -954,67 +967,7 @@ namespace IsoMesh
             if (!m_initialized || !m_isEnabled)
                 return;
 
-            if (m_algorithmSettings.IsosurfaceExtractionType == IsosurfaceExtractionType.DualContouring)
-                m_computeShaderInstance.EnableKeyword(DualContouringKeyword);
-            else
-                m_computeShaderInstance.DisableKeyword(DualContouringKeyword);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
-        public void OnEdgeIntersectionTypeChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            if (m_algorithmSettings.EdgeIntersectionType == EdgeIntersectionType.BinarySearch)
-                m_computeShaderInstance.DisableKeyword(InterpolationKeyword);
-            else
-                m_computeShaderInstance.EnableKeyword(InterpolationKeyword);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
-        public void OnNudgeSettingsChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetFloat(Properties.NudgeVerticesToAverageNormalScalar_Float, m_algorithmSettings.NudgeVerticesToAverageNormalScalar);
-            m_computeShaderInstance.SetFloat(Properties.NudgeMaxMagnitude_Float, m_algorithmSettings.NudgeMaxMagnitude);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
-        public void OnApplyGradientDescentChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            if (m_algorithmSettings.ApplyGradientDescent)
-                m_computeShaderInstance.EnableKeyword(ApplyGradientDescentKeyword);
-            else
-                m_computeShaderInstance.DisableKeyword(ApplyGradientDescentKeyword);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
-        public void OnQEFSettingsOverrideChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetFloat(Properties.QEFPseudoInverseThreshold_Float, m_algorithmSettings.QefPseudoInverseThreshold);
-            m_computeShaderInstance.SetInt(Properties.QEFSweeps_Int, m_algorithmSettings.QefSweeps);
-
-            if (m_algorithmSettings.OverrideQEFSettings)
-                m_computeShaderInstance.EnableKeyword(OverrideQEFSettingsKeyword);
-            else
-                m_computeShaderInstance.DisableKeyword(OverrideQEFSettingsKeyword);
+            m_computeShaderInstance.SetInt(Properties.IsosurfaceExtractionType_Int, (int)m_algorithmSettings.IsosurfaceExtractionType);
 
             if (m_mainSettings.AutoUpdate && !m_isInitializing)
                 UpdateMesh();
@@ -1022,17 +975,17 @@ namespace IsoMesh
         
         public void OnOutputModeChanged()
         {
-            if (TryGetOrCreateMeshGameObject())
+            if (TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
             {
-                m_meshFilterGameObject.SetActive(true);
+                meshGameObject.SetActive(true);
 
                 if (MeshRenderer)
                     MeshRenderer.enabled = !Group.IsEmpty;
             }
             else if (m_mainSettings.OutputMode == OutputMode.Procedural)
             {
-                if (m_meshFilterGameObject)
-                    m_meshFilterGameObject.SetActive(false);
+                if (meshGameObject)
+                    meshGameObject.SetActive(false);
             }
 
             SendTransformToGPU();
@@ -1056,7 +1009,7 @@ namespace IsoMesh
 
             if (!m_initialized)
                 InitializeComputeShaderSettings();
-            
+
             UpdateMapKernels(Properties.SDFData_StructuredBuffer, computeBuffer);
             m_computeShaderInstance.SetInt(Properties.SDFDataCount_Int, count);
 
@@ -1141,6 +1094,39 @@ namespace IsoMesh
 
         #endregion
 
+        #region Chunk + Editor Methods
+
+        [SerializeField]
+        private bool m_settingsControlledByGrid = false;
+
+        public void SetSettingsControlledByGrid(bool settingsControlledByGrid) =>
+            m_settingsControlledByGrid = settingsControlledByGrid;
+
+        public static void CloneSettings(SDFGroupMeshGenerator target, Transform parent, SDFGroup group, MainSettings mainSettings, AlgorithmSettings algorithmSettings, VoxelSettings voxelSettings, bool addMeshRenderer = false, bool addMeshCollider = false, Material meshRendererMaterial = null)
+        {
+            target.TryGetOrCreateMeshGameObject(out GameObject meshGameObject);
+
+            if (addMeshRenderer)
+            {
+                MeshRenderer clonedMeshRenderer = meshGameObject.GetOrAddComponent<MeshRenderer>();
+
+                if (meshRendererMaterial)
+                    clonedMeshRenderer.sharedMaterial = meshRendererMaterial;
+            }
+
+            if (addMeshCollider)
+            {
+                meshGameObject.GetOrAddComponent<MeshCollider>();
+            }
+
+            target.m_group = group;
+            target.m_mainSettings.CopySettings(mainSettings);
+            target.m_algorithmSettings.CopySettings(algorithmSettings);
+            target.m_voxelSettings.CopySettings(voxelSettings);
+        }
+
+        #endregion
+
         #region Structs
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1199,252 +1185,6 @@ namespace IsoMesh
 
         #endregion
 
-        #region Data Classes
-
-        [System.Serializable]
-        public class MainSettings
-        {
-            [SerializeField]
-            private bool m_autoUpdate = true;
-            public bool AutoUpdate => m_autoUpdate;
-
-            [SerializeField]
-            private OutputMode m_outputMode = OutputMode.Procedural;
-            public OutputMode OutputMode => m_outputMode;
-
-            [SerializeField]
-            private bool m_isAsynchronous = false;
-            public bool IsAsynchronous => m_isAsynchronous;
-
-            [SerializeField]
-            private Material m_proceduralMaterial;
-            public Material ProceduralMaterial => m_proceduralMaterial;
-
-            public MainSettings Copy()
-            {
-                return new MainSettings()
-                {
-                    m_autoUpdate = this.m_autoUpdate,
-                    m_outputMode = this.m_outputMode,
-                    m_isAsynchronous = this.m_isAsynchronous,
-                    m_proceduralMaterial = this.m_proceduralMaterial
-                };
-            }
-        }
-
-        [System.Serializable]
-        public class VoxelSettings
-        {
-            [SerializeField]
-            private CellSizeMode m_cellSizeMode = CellSizeMode.Fixed;
-            public CellSizeMode CellSizeMode => m_cellSizeMode;
-
-            [SerializeField]
-            private float m_cellSize = 0.2f;
-
-            public float CellSize
-            {
-                get
-                {
-                    if (m_cellSizeMode == CellSizeMode.Density)
-                        return m_volumeSize / m_cellDensity;
-
-                    return m_cellSize;
-                }
-            }
-
-            [SerializeField]
-            private int m_cellCount = 50;
-
-            public int CellCount
-            {
-                get
-                {
-                    if (m_cellSizeMode == CellSizeMode.Density)
-                        return Mathf.FloorToInt(m_volumeSize * m_cellDensity);
-
-                    return m_cellCount;
-                }
-            }
-
-            [SerializeField]
-            private float m_volumeSize = 5f;
-            public float VolumeSize => m_volumeSize;
-
-            [SerializeField]
-            private float m_cellDensity = 1f;
-            public float CellDensity => m_cellDensity;
-
-            public int SamplesPerSide => CellCount + 1;
-            public int TotalSampleCount
-            {
-                get
-                {
-                    int samplesPerSide = CellCount + 1;
-                    return samplesPerSide * samplesPerSide * samplesPerSide;
-                }
-            }
-
-            public Vector3 Extents => Vector3.one * CellCount * CellSize;
-
-            /// <summary>
-            /// Returns the distance, along any axis, along which an additional volume must be positioned in order to perfectly overlap with this one.
-            /// For example, if this volume is at the origin, with a cellcount of 50 and a cellsize of 0.1, a volume to the left must be placed at (-4.8, 0, 0).
-            /// </summary>
-            public float OffsetDistance => (CellCount - 2) * CellSize;
-
-            public VoxelSettings Copy()
-            {
-                return new VoxelSettings()
-                {
-                    m_cellSizeMode = this.m_cellSizeMode,
-                    m_cellSize = this.m_cellSize,
-                    m_cellCount = this.m_cellCount,
-                    m_volumeSize = this.m_volumeSize,
-                    m_cellDensity = this.m_cellDensity
-                };
-            }
-        }
-
-        [System.Serializable]
-        public class AlgorithmSettings
-        {
-            [SerializeField]
-            private float m_maxAngleTolerance = 20f;
-            public float MaxAngleTolerance => m_maxAngleTolerance;
-
-            [SerializeField]
-            private float m_visualNormalSmoothing = 1e-5f;
-            public float VisualNormalSmoothing => m_visualNormalSmoothing;
-
-            [SerializeField]
-            private IsosurfaceExtractionType m_isosurfaceExtractionType = IsosurfaceExtractionType.SurfaceNets;
-            public IsosurfaceExtractionType IsosurfaceExtractionType => m_isosurfaceExtractionType;
-
-            [SerializeField]
-            private float m_constrainToCellUnits = 0f;
-            public float ConstrainToCellUnits => m_constrainToCellUnits;
-
-            [SerializeField]
-            private bool m_overrideQEFSettings = false;
-            public bool OverrideQEFSettings => m_overrideQEFSettings;
-
-            [SerializeField]
-            private int m_qefSweeps = 5;
-            public int QefSweeps => m_qefSweeps;
-
-            [SerializeField]
-            private float m_qefPseudoInverseThreshold = 1e-2f;
-            public float QefPseudoInverseThreshold => m_qefPseudoInverseThreshold;
-
-            [SerializeField]
-            private EdgeIntersectionType m_edgeIntersectionType = EdgeIntersectionType.Interpolation;
-            public EdgeIntersectionType EdgeIntersectionType => m_edgeIntersectionType;
-
-            [SerializeField]
-            private int m_binarySearchIterations = 5;
-            public int BinarySearchIterations => m_binarySearchIterations;
-
-            [SerializeField]
-            private bool m_applyGradientDescent = false;
-            public bool ApplyGradientDescent => m_applyGradientDescent;
-
-            [SerializeField]
-            private int m_gradientDescentIterations = 10;
-            public int GradientDescentIterations => m_gradientDescentIterations;
-
-            [SerializeField]
-            private float m_nudgeVerticesToAverageNormalScalar = 0.01f;
-            public float NudgeVerticesToAverageNormalScalar => m_nudgeVerticesToAverageNormalScalar;
-
-            [SerializeField]
-            private float m_nudgeMaxMagnitude = 1f;
-            public float NudgeMaxMagnitude => m_nudgeMaxMagnitude;
-
-            public AlgorithmSettings Copy()
-            {
-                return new AlgorithmSettings()
-                {
-                    m_maxAngleTolerance = this.m_maxAngleTolerance,
-                    m_visualNormalSmoothing = this.m_visualNormalSmoothing,
-                    m_isosurfaceExtractionType = this.m_isosurfaceExtractionType,
-                    m_constrainToCellUnits = this.m_constrainToCellUnits,
-                    m_overrideQEFSettings = this.m_overrideQEFSettings,
-                    m_qefSweeps = this.m_qefSweeps,
-                    m_qefPseudoInverseThreshold = this.m_qefPseudoInverseThreshold,
-                    m_edgeIntersectionType = this.m_edgeIntersectionType,
-                    m_binarySearchIterations = this.m_binarySearchIterations,
-                    m_applyGradientDescent = this.m_applyGradientDescent,
-                    m_gradientDescentIterations = this.m_gradientDescentIterations,
-                    m_nudgeVerticesToAverageNormalScalar = this.m_nudgeVerticesToAverageNormalScalar,
-                    m_nudgeMaxMagnitude = this.m_nudgeMaxMagnitude,
-                };
-            }
-        }
-
-        #endregion
-
-        #region Static Methods
-
-        public SDFGroupMeshGenerator Duplicate(Vector3Int offset = default) => Duplicate(this, offset);
-
-        /// <summary>
-        /// Duplicate this object in a way that's fast and works in editor and in builds, in play mode and in edit mode.
-        /// </summary>
-        public static SDFGroupMeshGenerator Duplicate(SDFGroupMeshGenerator original, Vector3Int offset = default)
-        {
-            GameObject cloneObject = new GameObject(original.name + " Clone");
-            cloneObject.transform.SetParent(original.transform.parent);
-            cloneObject.transform.position = original.transform.position + (Vector3)offset * original.m_voxelSettings.OffsetDistance;
-            cloneObject.SetActive(false);
-
-            GameObject cloneMeshObject = null;
-
-            if (original.m_mainSettings.OutputMode == OutputMode.MeshFilter && original.m_meshFilterGameObject)
-            {
-                GameObject originalMeshObject = original.m_meshFilterGameObject;
-
-                cloneMeshObject = new GameObject(original.name + " Generated Mesh", typeof(MeshFilter));
-                cloneMeshObject.transform.SetParent(cloneObject.transform);
-                cloneMeshObject.transform.Reset();
-                
-                if (originalMeshObject.TryGetComponent(out MeshRenderer originalMeshRenderer))
-                {
-                    MeshRenderer clonedMeshRenderer = cloneMeshObject.AddComponent<MeshRenderer>();
-                    clonedMeshRenderer.sharedMaterial = originalMeshRenderer.sharedMaterial;
-                }
-
-                if (originalMeshObject.TryGetComponent(out MeshCollider originalMeshCollider))
-                {
-                    cloneMeshObject.AddComponent<MeshCollider>();
-                }
-            }
-
-            SDFGroupMeshGenerator clonedComponent = cloneObject.AddComponent<SDFGroupMeshGenerator>();
-
-            clonedComponent.m_meshFilterGameObject = cloneMeshObject;
-            clonedComponent.m_group = original.m_group;
-            clonedComponent.m_mainSettings = original.m_mainSettings.Copy();
-            clonedComponent.m_algorithmSettings = original.m_algorithmSettings.Copy();
-            clonedComponent.m_voxelSettings = original.m_voxelSettings.Copy();
-
-            cloneObject.SetActive(original.gameObject.activeSelf);
-
-            // Move directly underneath original
-            cloneObject.transform.SetSiblingIndex(original.transform.GetSiblingIndex() + 1);
-
-#if UNITY_EDITOR
-            // Select new object
-            Selection.activeGameObject = cloneObject;
-
-            // Register Undo
-            Undo.RegisterCreatedObjectUndo(cloneObject, "Duplicated SDF Mesh Generator");
-#endif
-
-            return clonedComponent;
-        }
-
-        #endregion
     }
 
     public enum IsosurfaceExtractionType { SurfaceNets, DualContouring };

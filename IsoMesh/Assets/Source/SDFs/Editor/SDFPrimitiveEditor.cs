@@ -17,9 +17,12 @@ namespace IsoMesh.Editor
             public static GUIContent Bounds = new GUIContent("Bounds", "The xyz bounds of the cuboid.");
             public static GUIContent Roundedness = new GUIContent("Roundedness", "How curved are the cuboids corners and edges.");
             public static GUIContent Radius = new GUIContent("Radius", "The radius of the sphere.");
+            public static GUIContent CylinderRadius = new GUIContent("Radius", "The radius of the cylinder.");
+            public static GUIContent CylinderLength = new GUIContent("Length", "The length of the cylinder.");
             public static GUIContent MajorRadius = new GUIContent("Major Radius", "The radius of the whole torus.");
             public static GUIContent MinorRadius = new GUIContent("Minor Radius", "The radius of the tube of the torus.");
             public static GUIContent Thickness = new GUIContent("Thickness", "The thickness of the frame.");
+            public static GUIContent Smoothing = new GUIContent("Smoothing", "How smoothly this sdf blends with the previous SDFs.");
         }
 
         private class SerializedProperties
@@ -28,6 +31,7 @@ namespace IsoMesh.Editor
             public SerializedProperty Data { get; }
             public SerializedProperty Operation { get; }
             public SerializedProperty Flip { get; }
+            public SerializedProperty Smoothing { get; }
 
             public SerializedProperties(SerializedObject serializedObject)
             {
@@ -35,6 +39,7 @@ namespace IsoMesh.Editor
                 Data = serializedObject.FindProperty("m_data");
                 Operation = serializedObject.FindProperty("m_operation");
                 Flip = serializedObject.FindProperty("m_flip");
+                Smoothing = serializedObject.FindProperty("m_smoothing");
             }
         }
 
@@ -58,6 +63,7 @@ namespace IsoMesh.Editor
             m_setter.DrawProperty(Labels.Type, m_serializedProperties.Type);
             m_setter.DrawProperty(Labels.Operation, m_serializedProperties.Operation);
             m_setter.DrawProperty(Labels.Flip, m_serializedProperties.Flip);
+            m_setter.DrawFloatSetting(Labels.Smoothing, m_serializedProperties.Smoothing, min: 0f);
 
             using (EditorGUILayout.VerticalScope box = new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
@@ -77,6 +83,10 @@ namespace IsoMesh.Editor
                     case SDFPrimitiveType.BoxFrame:
                         m_setter.DrawVector3Setting(Labels.Bounds, m_serializedProperties.Data, min: 0f);
                         m_setter.DrawVectorSettingW(Labels.Thickness, m_serializedProperties.Data, min: 0f);
+                        break;
+                    case SDFPrimitiveType.Cylinder:
+                        m_setter.DrawVectorSettingX(Labels.CylinderRadius, m_serializedProperties.Data, min: 0f);
+                        m_setter.DrawVectorSettingY(Labels.CylinderLength, m_serializedProperties.Data, min: 0f);
                         break;
                 }
             }

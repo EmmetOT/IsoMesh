@@ -49,7 +49,8 @@ namespace IsoMesh
                 Data = m_data,
                 Transform = transform.worldToLocalMatrix,
                 CombineType = (int)m_operation,
-                Flip = m_flip ? -1 : 1
+                Flip = m_flip ? -1 : 1,
+                Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing)
             };
         }
 
@@ -80,7 +81,7 @@ namespace IsoMesh
         #region Create Menu Items
 
 #if UNITY_EDITOR
-        private static void CreateNewPrimitive(SDFPrimitiveType type)
+        private static void CreateNewPrimitive(SDFPrimitiveType type, Vector4 startData)
         {
             GameObject selection = Selection.activeGameObject;
 
@@ -90,21 +91,26 @@ namespace IsoMesh
 
             SDFPrimitive newPrimitive = child.AddComponent<SDFPrimitive>();
             newPrimitive.m_type = type;
+            newPrimitive.m_data = startData;
+            newPrimitive.SetDirty();
 
             Selection.activeGameObject = child;
         }
 
         [MenuItem("GameObject/SDFs/Sphere", false, priority: 2)]
-        private static void CreateSphere(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Sphere);
+        private static void CreateSphere(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Sphere, new Vector4(1f, 0f, 0f, 0f));
 
         [MenuItem("GameObject/SDFs/Cuboid", false, priority: 2)]
-        private static void CreateCuboid(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Cuboid);
+        private static void CreateCuboid(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Cuboid, new Vector4(1f, 1f, 1f, 0f));
 
         [MenuItem("GameObject/SDFs/Torus", false, priority: 2)]
-        private static void CreateTorus(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Torus);
+        private static void CreateTorus(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Torus, new Vector4(1f, 0.5f, 0f, 0f));
 
         [MenuItem("GameObject/SDFs/Frame", false, priority: 2)]
-        private static void CreateFrame(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.BoxFrame);
+        private static void CreateFrame(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.BoxFrame, new Vector4(1f, 1f, 1f, 0.2f));
+
+        [MenuItem("GameObject/SDFs/Cylinder", false, priority: 2)]
+        private static void CreateCylinder(MenuCommand menuCommand) => CreateNewPrimitive(SDFPrimitiveType.Cylinder, new Vector4(1f, 1f, 0f, 0f));
 
 #endif
         #endregion
@@ -115,6 +121,7 @@ namespace IsoMesh
         Sphere,
         Torus,
         Cuboid,
-        BoxFrame
+        BoxFrame, 
+        Cylinder
     }
 }

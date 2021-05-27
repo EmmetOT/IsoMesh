@@ -12,7 +12,7 @@ namespace IsoMesh
     [System.Serializable]
     public struct SDFGPUData
     {
-        public static int Stride => sizeof(int) * 3 + sizeof(float) * 10 + sizeof(float) * 16;
+        public static int Stride => sizeof(int) * 3 + sizeof(float) * 11 + sizeof(float) * 16;
 
         public int Type; // negative if operation, 0 if mesh, else it's an enum value
         public Vector4 Data; // if primitive, this could be anything. if mesh, it's (size, sample start index, uv start index, 0)
@@ -21,6 +21,14 @@ namespace IsoMesh
         public int Flip; // whether to multiply by -1, turns inside out
         public Vector3 MinBounds; // only used by sdfmesh, near bottom left
         public Vector3 MaxBounds;// only used by sdfmesh, far top right
+        public float Smoothing; // the input to the smooth min function, how smoothly this sdf blends with the previous ones
+
+        public bool IsMesh => Type == 0;
+        public bool IsOperation => Type < 0;
+        public bool IsPrimitive => Type > 0;
+        public int Size => (int)Data.x;
+        public int SampleStartIndex => (int)Data.y;
+        public int UVStartIndex => (int)Data.z;
 
         public override string ToString()
         {

@@ -19,9 +19,10 @@ float3 sdf_op_rotate(float3 p, float3 eulerAngles)
     return mul(p, Euler3x3(eulerAngles));
 }
 
-float sdf_cylinder(float3 p, float3 c)
+float sdf_cylinder(float3 p, float h, float r)
 {
-    return length(p.xz - c.xy) - c.z;
+    float2 d = abs(float2(length(p.xz), p.y)) - float2(h, r);
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
 }
 
 float sdf_box(float3 p, float3 b)
