@@ -7,6 +7,7 @@
 
 #define SVD_NUM_SWEEPS 5
 #define PSUEDO_INVERSE_THRESHOLD 0.15
+#define PSEUDO_INVERSE_MAT float3x3(PSUEDO_INVERSE_THRESHOLD, 0., 0., 0., PSUEDO_INVERSE_THRESHOLD, 0., 0., 0., PSUEDO_INVERSE_THRESHOLD)
 
 typedef float mat3x3[3][3];
 typedef float mat3x3_tri[6];
@@ -220,7 +221,7 @@ float3 SolveQEF(int edgeIntersectionCount, float3 localEdgeIntersectionNormals[1
 {
     // https://www.mattkeeter.com/projects/qef/
     
-    float3 result = float3(0.0, 0.0, 0.0);
+    float3 result = float3(0., 0., 0.);
     
     // "A is a s×d matrix, where s is the number of samples and d is the dimension."
     float3x3 _A[SVD_NUM_SWEEPS];
@@ -230,11 +231,11 @@ float3 SolveQEF(int edgeIntersectionCount, float3 localEdgeIntersectionNormals[1
     
     for (int i = 0; i < SVD_NUM_SWEEPS; i++)
     {
-        _A[i] = 0.;
-        b[i] = 0.;
+        _A[i] = float3x3(0., 0., 0., 0., 0., 0., 0., 0., 0.);
+        b[i] = float3(0., 0., 0.);
     }
     
-    float dualContouringRelaxationComp = 1.0 - PSUEDO_INVERSE_THRESHOLD;
+    float oneMinusPseudoInverse = 1.0 - PSUEDO_INVERSE_THRESHOLD;
     
     for (uint j = 0; j < uint(edgeIntersectionCount); j++)
     {
@@ -242,57 +243,57 @@ float3 SolveQEF(int edgeIntersectionCount, float3 localEdgeIntersectionNormals[1
         switch (j % 3u)
         {
             case 0:
-                _A[jDiv3]._m00_m01_m02 = dualContouringRelaxationComp * localEdgeIntersectionNormals[j];
-                b[jDiv3].x = dualContouringRelaxationComp * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
+                _A[jDiv3]._m00_m01_m02 = oneMinusPseudoInverse * localEdgeIntersectionNormals[j];
+                b[jDiv3].x = oneMinusPseudoInverse * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
                 break;
             case 1:
-                _A[jDiv3]._m10_m11_m12 = dualContouringRelaxationComp * localEdgeIntersectionNormals[j];
-                b[jDiv3].y = dualContouringRelaxationComp * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
+                _A[jDiv3]._m10_m11_m12 = oneMinusPseudoInverse * localEdgeIntersectionNormals[j];
+                b[jDiv3].y = oneMinusPseudoInverse * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
                 break;
             case 2:
-                _A[jDiv3]._m20_m21_m22 = dualContouringRelaxationComp * localEdgeIntersectionNormals[j];
-                b[jDiv3].z = dualContouringRelaxationComp * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
+                _A[jDiv3]._m20_m21_m22 = oneMinusPseudoInverse * localEdgeIntersectionNormals[j];
+                b[jDiv3].z = oneMinusPseudoInverse * dot(localEdgeIntersectionNormals[j], localEdgeIntersectionPoints[j]);
                 break;
         }
     }
     
-    _A[4]._m00_m01_m02 = float3(PSUEDO_INVERSE_THRESHOLD, 0., 0.);
-    _A[4]._m10_m11_m12 = float3(0., PSUEDO_INVERSE_THRESHOLD, 0.);
-    _A[4]._m20_m21_m22 = float3(0., 0., PSUEDO_INVERSE_THRESHOLD);
+    
+    _A[4] = PSEUDO_INVERSE_MAT;
     b[4] = PSUEDO_INVERSE_THRESHOLD * averageEdgeIntersectionPoint;
 
-    float3x3 pseudoInverse[5];
-    float3x3 _A2 = 0.0;
+    float3x3 _A2 = float3x3(0., 0., 0., 0., 0., 0., 0., 0., 0.);
     
+    // AtA
     for (int k = 0; k < SVD_NUM_SWEEPS; k++)
     {
         _A2 += mul(transpose(_A[k]), _A[k]);
     }
     
-    float3x3 _A3 = _A2;
     float detInv =
         1. /
-        (_A3._m00 * (_A3._m11 * _A3._m22 - _A3._m21 * _A3._m12) -
-        _A3._m01 * (_A3._m10 * _A3._m22 - _A3._m12 * _A3._m20) +
-        _A3._m02 * (_A3._m10 * _A3._m21 - _A3._m11 * _A3._m20));
+        (_A2._m00 * (_A2._m11 * _A2._m22 - _A2._m21 * _A2._m12) -
+        _A2._m01 * (_A2._m10 * _A2._m22 - _A2._m12 * _A2._m20) +
+        _A2._m02 * (_A2._m10 * _A2._m21 - _A2._m11 * _A2._m20));
+    
+    _A2 = float3x3
+    (
+        (_A2._m11 * _A2._m22 - _A2._m21 * _A2._m12) * detInv,
+        (_A2._m02 * _A2._m21 - _A2._m01 * _A2._m22) * detInv,
+        (_A2._m01 * _A2._m12 - _A2._m02 * _A2._m11) * detInv,
+        (_A2._m12 * _A2._m20 - _A2._m10 * _A2._m22) * detInv,
+        (_A2._m00 * _A2._m22 - _A2._m02 * _A2._m20) * detInv,
+        (_A2._m10 * _A2._m02 - _A2._m00 * _A2._m12) * detInv,
+        (_A2._m10 * _A2._m21 - _A2._m20 * _A2._m11) * detInv,
+        (_A2._m20 * _A2._m01 - _A2._m00 * _A2._m21) * detInv,
+        (_A2._m00 * _A2._m11 - _A2._m10 * _A2._m01) * detInv
+    );
             
-    _A2._m00 = (_A3._m11 * _A3._m22 - _A3._m21 * _A3._m12) * detInv;
-    _A2._m01 = (_A3._m02 * _A3._m21 - _A3._m01 * _A3._m22) * detInv;
-    _A2._m02 = (_A3._m01 * _A3._m12 - _A3._m02 * _A3._m11) * detInv;
-    _A2._m10 = (_A3._m12 * _A3._m20 - _A3._m10 * _A3._m22) * detInv;
-    _A2._m11 = (_A3._m00 * _A3._m22 - _A3._m02 * _A3._m20) * detInv;
-    _A2._m12 = (_A3._m10 * _A3._m02 - _A3._m00 * _A3._m12) * detInv;
-    _A2._m20 = (_A3._m10 * _A3._m21 - _A3._m20 * _A3._m11) * detInv;
-    _A2._m21 = (_A3._m20 * _A3._m01 - _A3._m00 * _A3._m21) * detInv;
-    _A2._m22 = (_A3._m00 * _A3._m11 - _A3._m10 * _A3._m01) * detInv;
-
     for (int l = 0; l < SVD_NUM_SWEEPS; l++)
     {
         result += mul(mul(_A2, transpose(_A[l])), b[l]);
     }
 
-    // pseudoInverse * b
-    // x = pseudoInverse(transpose(A) * A) * (transpose(A) * B)
+    // x = pseudoInverse(AtA) * (AtB)
     return result;
 }
 
