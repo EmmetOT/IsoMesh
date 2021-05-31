@@ -18,8 +18,7 @@ namespace IsoMesh
         public SDFMeshAsset Asset => m_asset;
 
         [SerializeField]
-        [UnityEngine.Serialization.FormerlySerializedAs("m_operation")]
-        protected SDFCombineType m_combineType;
+        protected SDFCombineType m_operation;
 
         [SerializeField]
         protected bool m_flip = false;
@@ -59,12 +58,12 @@ namespace IsoMesh
                 Type = 0,
                 Data = new Vector4(m_asset.Size, sampleStartIndex, uvStartIndex),
                 Transform = transform.worldToLocalMatrix,
-                CombineType = (int)m_combineType,
+                CombineType = (int)m_operation,
                 Flip = m_flip ? -1 : 1,
                 MinBounds = m_asset.MinBounds,
                 MaxBounds = m_asset.MaxBounds,
                 Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing)
-        };
+            };
         }
 
 #if UNITY_EDITOR

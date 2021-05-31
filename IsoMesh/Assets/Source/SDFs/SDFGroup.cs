@@ -49,15 +49,6 @@ namespace IsoMesh
         // called during recompiles etc. you can basically read this bool as "is recompiling"
         private bool m_isEnabled = false;
 
-        //[SerializeField]
-        //private float m_smoothing = 0.2f;
-        //public float Smoothing => m_smoothing;
-        //public void SetSmoothing(float smoothing)
-        //{
-        //    m_smoothing = smoothing;
-        //    OnSettingsChanged();
-        //}
-
         [SerializeField]
         private float m_normalSmoothing = 0.015f;
         public float NormalSmoothing => m_normalSmoothing;
@@ -70,6 +61,7 @@ namespace IsoMesh
         private List<ISDFGroupComponent> m_sdfComponents = new List<ISDFGroupComponent>();
 
         private ComputeBuffer m_dataBuffer;
+        private ComputeBuffer m_materialBuffer;
 
         private ComputeBuffer m_settingsBuffer;
         public ComputeBuffer SettingsBuffer => m_settingsBuffer;
@@ -89,6 +81,7 @@ namespace IsoMesh
         private static ComputeBuffer m_meshPackedUVsBuffer;
 
         private List<SDFGPUData> m_data = new List<SDFGPUData>();
+        private List<SDFMaterialGPU> m_materials = new List<SDFMaterialGPU>();
         private readonly List<int> m_dataSiblingIndices = new List<int>();
 
         public bool IsEmpty => m_sdfObjects.IsNullOrEmpty();
@@ -222,6 +215,7 @@ namespace IsoMesh
             IsReady = false;
 
             m_dataBuffer?.Dispose();
+            m_materialBuffer?.Dispose();
             m_settingsBuffer?.Dispose();
         }
 
@@ -441,6 +435,7 @@ namespace IsoMesh
             // memorize the size of the array before clearing it, for later comparison
             int previousCount = m_data.Count;
             m_data.Clear();
+            m_materials.Clear();
 
             // add all the sdf objects
             for (int i = 0; i < m_sdfObjects.Count; i++)
@@ -467,6 +462,7 @@ namespace IsoMesh
                 }
 
                 m_data.Add(sdfObject.GetSDFGPUData(meshStartIndex, uvStartIndex));
+                m_materials.Add(sdfObject.GetMaterial());
             }
 
             bool sendBuffer = !onlySendBufferOnChange;
@@ -480,17 +476,29 @@ namespace IsoMesh
                 m_dataBuffer = new ComputeBuffer(Mathf.Max(1, m_data.Count), SDFGPUData.Stride, ComputeBufferType.Structured);
             }
 
+            // check whether we need to create a new buffer. buffers are fixed sizes so the most common occasion for this is simply a change of size
+            if (m_materialBuffer == null || !m_materialBuffer.IsValid() || previousCount != m_data.Count)
+            {
+                sendBuffer = true;
+
+                m_materialBuffer?.Dispose();
+                m_materialBuffer = new ComputeBuffer(Mathf.Max(1, m_data.Count), SDFMaterialGPU.Stride, ComputeBufferType.Structured);
+            }
+
             // if the buffer is new, the size has changed, or if it's forced, we resend the buffer to the sdf group component classes
             if (sendBuffer)
             {
                 for (int i = 0; i < m_sdfComponents.Count; i++)
-                    m_sdfComponents[i].UpdateDataBuffer(m_dataBuffer, m_data.Count);
+                    m_sdfComponents[i].UpdateDataBuffer(m_dataBuffer, m_materialBuffer, m_data.Count);
             }
 
             if (m_data.Count > 0)
+            {
                 m_dataBuffer.SetData(m_data);
-
-            Mapper.SetData(m_data);
+                m_materialBuffer.SetData(m_materials);
+            }
+            
+            Mapper.SetData(m_data, m_materials);
 
             // if we also changed the global mesh data buffer in this method, we need to send that as well
             if (!onlySendBufferOnChange || globalBuffersChanged)

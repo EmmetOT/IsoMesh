@@ -18,59 +18,12 @@
 
 #include "Common.hlsl"
 #include "./SDFFunctions.hlsl"
-
-// This struct represents a single SDF object, to be sent as an instruction to the GPU.
-struct SDFGPUData
-{
-    int Type; // negative if operation, 0 if mesh, else it's an enum value
-    float4 Data; // if primitive, this could be anything. if mesh, it's (size, sample start index, uv start index, 0)
-    float4x4 Transform; // translation/rotation/scale
-    int Operation; // how this sdf is combined with previous 
-    int Flip; // whether to multiply by -1, turns inside out
-    float3 MinBounds; // only used by sdfmesh, near bottom left
-    float3 MaxBounds; // only used by sdfmesh, far top right
-    float Smoothing;
-    
-    bool IsMesh()
-    {
-        return Type == 0;
-    }
-    
-    bool IsOperation()
-    {
-        return Type < 0;
-    }
-    
-    bool IsPrimitive()
-    {
-        return Type > 0;
-    }
-    
-    int Size()
-    {
-        return (int) Data.x;
-    }
-    
-    int SampleStartIndex()
-    {
-        return (int) Data.y;
-    }
-    
-    int UVStartIndex()
-    {
-        return (int) Data.z;
-    }
-};
-
-struct Settings
-{
-    //float Smoothing; // the input to the smooth min function
-    float NormalSmoothing; // the 'epsilon' value for computing the gradient, affects how smoothed out the normals are
-};
+#include "./Compute_IsoSurfaceExtraction_Structs.hlsl"
 
 StructuredBuffer<Settings> _Settings;
 
 StructuredBuffer<SDFGPUData> _SDFData;
+StructuredBuffer<SDFMaterialGPU> _SDFMaterials;
 int _SDFDataCount;
 
 StructuredBuffer<float> _SDFMeshSamples;
@@ -275,19 +228,6 @@ float sdf(float3 p, SDFGPUData data)
         
         return length(vec) * distSign * data.Flip;
     }
-    //else if (data.IsOperation())
-    //{
-    //    //p = mul(data.Transform, float4(p, 1.0)).xyz;
-    //    int operation = -data.Type;
-        
-    //    switch (operation)
-    //    {
-    //        case OPERATION_TYPE_ELONGATE:
-    //            return sdf_op_elongate(p, data.Data.xyz);
-    //        default:
-    //            return sdf_op_round(p, data.Data.x);
-    //    }
-    //}
     else
     {
         p = mul(data.Transform, float4(p, 1.0)).xyz;
@@ -307,6 +247,42 @@ float sdf(float3 p, SDFGPUData data)
         }
     }
 }
+
+
+//float sdf_colour(float3 p, SDFGPUData data, SDFMaterialGPU material, out float3 colour)
+//{
+//    if (data.IsMesh())
+//    {
+//        float distSign;
+//        float3 transformedP;
+//        float3 vec = unsignedDirection_mesh(p, data, distSign, transformedP);
+        
+//        colour = float3(1, 1, 1);
+//        return length(vec) * distSign * data.Flip;
+//    }
+//    else
+//    {
+//        p = mul(data.Transform, float4(p, 1.0)).xyz;
+        
+//        colour = material.Colour;
+    
+//        switch (data.Type)
+//        {
+//            case PRIMITIVE_TYPE_SPHERE:
+//                return sdf_sphere(p, data.Data.x) * data.Flip;
+//            case PRIMITIVE_TYPE_TORUS:
+//                return sdf_torus(p, data.Data.xy) * data.Flip;
+//            case PRIMITIVE_TYPE_CUBOID:
+//                return sdf_roundedBox(p, data.Data.xyz, data.Data.w) * data.Flip;
+//            case PRIMITIVE_TYPE_CYLINDER:
+//                return sdf_cylinder(p, data.Data.x, data.Data.y) * data.Flip;
+//            default:
+//                return sdf_boxFrame(p, data.Data.xyz, data.Data.w) * data.Flip;
+//        }
+//    }
+//}
+
+
 
 float2 sdf_uv(float3 p, SDFGPUData data, out float dist)
 {
@@ -349,8 +325,6 @@ float Map(float3 p)
 {
     float minDist = 10000000.0;
     
-    //float smoothing = _Settings[0].Smoothing;
-    
     [fastopt]
     for (int i = 0; i < _SDFDataCount; i++)
     {
@@ -359,25 +333,11 @@ float Map(float3 p)
         if (data.IsOperation())
         {
             p = sdf_op_elongate(p, data.Data.xyz, data.Transform);
-            //int operation = -data.Type;
-        
-            //switch (operation)
-            //{
-            //    case OPERATION_TYPE_ELONGATE:
-            //        p = sdf_op_elongate(p, data.Data.xyz, data.Transform);
-            //        break;
-            //    case OPERATION_TYPE_ONION:
-            //        minDist = sdf_op_onion(minDist, data.Data.x, data.Data.y);
-            //        break;
-            //    default:
-            //        p = mul(float4(sdf_op_round(mul(data.Transform, float4(p, 1.0)).xyz, data.Data.x), 1.0), data.Transform).xyz;
-            //        break;
-            //}
         }
         else
         {
             if (data.Operation == 0)
-                minDist = sdf_op_smin(minDist, sdf(p, data), data.Smoothing);
+                minDist = sdf_op_smin(sdf(p, data), minDist, data.Smoothing);
             else if (data.Operation == 1)
                 minDist = sdf_op_smoothSubtraction(sdf(p, data), minDist, data.Smoothing);
             else
@@ -387,6 +347,73 @@ float Map(float3 p)
     }
     
     return minDist;
+}
+
+SDFMaterialGPU MapColour(float3 p)
+{
+    const float smallNumber = 0.0000001;
+    const float bigNumber = 1000000;
+    //const float blendingSharpness = 2.;
+    
+    float inverseDistanceSum = 0.0;// = 1.0 / clamp(Map(p), smallNumber, bigNumber);
+    float3 tempP = p;
+    
+    [fastopt]
+    for (int i = 0; i < _SDFDataCount; i++)
+    {
+        SDFGPUData data = _SDFData[i];
+        SDFMaterialGPU material = _SDFMaterials[i];
+        
+        if (data.IsOperation())
+        {
+            tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+        }
+        else
+        {
+            float dist = sdf(tempP, data);
+            
+            inverseDistanceSum += (1.0 / (clamp(dist, smallNumber, bigNumber)));
+        }
+    }
+    
+    SDFMaterialGPU final;
+    final.Colour = float3(0, 0, 0);
+    final.Emission = float3(0, 0, 0);
+    final.Metallic = 0;
+    final.Smoothness = 0;
+    
+    tempP = p;
+    
+    [fastopt]
+    for (int j = 0; j < _SDFDataCount; j++)
+    {
+        SDFGPUData data = _SDFData[j];
+        SDFMaterialGPU material = _SDFMaterials[j];
+        
+        if (data.IsOperation())
+        {
+            tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+        }
+        else
+        {
+            float3 col;
+            float dist = sdf(tempP, data); //sdf_colour(tempP, data, material, col);
+            float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
+            float weight = saturate(inverseDist / inverseDistanceSum);
+
+            final.Colour += material.Colour * weight;
+            final.Emission += material.Emission * weight;
+            final.Metallic += material.Metallic * weight;
+            final.Smoothness += material.Smoothness * weight;
+        }
+    }
+    
+    final.Colour = saturate(final.Colour);
+    final.Emission = saturate(final.Emission);
+    final.Metallic = saturate(final.Metallic);
+    final.Smoothness = saturate(final.Smoothness);
+    
+    return final;
 }
 
 float2 MapUV(float3 p)
@@ -403,23 +430,7 @@ float2 MapUV(float3 p)
         SDFGPUData data = _SDFData[i];
         
         if (data.IsOperation())
-        {
             tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            //int operation = -data.Type;
-        
-            //switch (operation)
-            //{
-            //    case OPERATION_TYPE_ELONGATE:
-            //        tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            //        break;
-            //    case OPERATION_TYPE_ONION:
-            //        minDist = sdf_op_onion(minDist, data.Data.x, data.Data.y);
-            //        break;
-            //    default:
-            //        tempP = mul(float4(sdf_op_round(mul(data.Transform, float4(p, 1.0)).xyz, data.Data.x), 1.0), data.Transform).xyz;
-            //        break;
-            //}
-        }
         else if (data.Operation == 0)
             inverseDistanceSum += (1.0 / clamp(sdf(tempP, _SDFData[i]), smallNumber, bigNumber));
     }
@@ -435,20 +446,6 @@ float2 MapUV(float3 p)
         if (data.IsOperation())
         {
             tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            //int operation = -data.Type;
-        
-            //switch (operation)
-            //{
-            //    case OPERATION_TYPE_ELONGATE:
-            //        tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            //        break;
-            //    case OPERATION_TYPE_ONION:
-            //        minDist = sdf_op_onion(minDist, data.Data.x, data.Data.y);
-            //        break;
-            //    default:
-            //        tempP = mul(float4(sdf_op_round(mul(data.Transform, float4(tempP, 1.0)).xyz, data.Data.x), 1.0), data.Transform).xyz;
-            //        break;
-            //}
         }
         else if (data.Operation == 0)
         {

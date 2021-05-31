@@ -30,19 +30,22 @@ namespace IsoMesh
         public int SampleStartIndex => (int)Data.y;
         public int UVStartIndex => (int)Data.z;
 
+        public SDFPrimitiveType PrimitiveType => (SDFPrimitiveType)(Type - 1);
+        public SDFOperationType OperationType => (SDFOperationType)(-Type - 1);
+
         public override string ToString()
         {
-            if (Type == 0)
+            if (IsMesh)
             {
                 return $"[Mesh] Size = {(int)Data.x}, MinBounds = {MinBounds}, MaxBounds = {MaxBounds}, StartIndex = {(int)Data.y}, UVStartIndex = {(int)Data.z}";
             }
-            else if (Type < 0)
+            else if (IsOperation)
             {
-                return $"[{(SDFOperationType)Type}] Data = {Data}";
+                return $"[{OperationType}] Data = {Data}";
             }
             else
             {
-                return $"[{(SDFPrimitiveType)Type}] Data = {Data}";
+                return $"[{PrimitiveType}] Data = {Data}";
             }
         }
     }

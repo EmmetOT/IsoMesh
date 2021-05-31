@@ -12,6 +12,7 @@ namespace IsoMesh
     {
         private SDFGroup.Settings m_settings;
         private IList<SDFGPUData> m_sdfData;
+        private IList<SDFMaterialGPU> m_sdfMaterials;
         private IList<float> m_sdfMeshSamples;
         private IList<float> m_sdfMeshPackedUVs;
 
@@ -49,6 +50,13 @@ namespace IsoMesh
             }
         }
 
+
+        private float SDF_Colour(Vector3 p, SDFGPUData data, SDFMaterialGPU material, out Vector4 colour)
+        {
+            colour = material.Colour;
+            return SDF(p, data);
+        }
+
         /// <summary>
         /// Returns the signed distance to the field as a whole.
         /// </summary>
@@ -70,12 +78,98 @@ namespace IsoMesh
                         minDist = SmoothUnion(minDist, SDF(p, data), data.Smoothing);
                     else if (data.CombineType == 1)
                         minDist = SmoothSubtract(SDF(p, data), minDist, data.Smoothing);
-                    else 
+                    else
                         minDist = SmoothIntersect(SDF(p, data), minDist, data.Smoothing);
                 }
             }
 
             return minDist;
+        }
+
+        float dist_blend_weight(float distA, float distB, float strength)
+        {
+            float m = 1.0f / Mathf.Max(0.0001f, distA);
+            float n = 1.0f / Mathf.Max(0.0001f, distB);
+            m = Mathf.Pow(m, strength);
+            n = Mathf.Pow(n, strength);
+            return Mathf.Clamp01(n / (m + n));
+        }
+
+        public Vector4 MapColour(Vector3 p)
+        {
+            return Vector4.zero;
+
+            //if (m_sdfMaterials.IsNullOrEmpty())
+            //    return Vector4.zero;
+
+            ////const float smallNumber = 0.0000001f;
+            ////const float bigNumber = 1000000f;
+
+            ////float inverseDistanceSum = 0;
+            //float distanceSum = Map(p);
+            //Vector3 tempP = p;
+
+            //Color finalColour = (Vector4)m_sdfMaterials[0].Colour;
+
+
+            //for (int i = 1; i < m_sdfData.Count; i++)
+            //{
+            //    SDFGPUData data = m_sdfData[i];
+            //    SDFMaterialGPU material = m_sdfMaterials[i];
+
+            //    //if (data.IsOperation)
+            //    //    tempP = ElongateSpace(tempP, XYZ(data.Data), data.Transform);
+            //    //else if (data.CombineType == 0)
+
+            //    //inverseDistanceSum += (1f / Mathf.Clamp(SDF(tempP, data), smallNumber, bigNumber));
+            //    float dist = SDF(tempP, data);
+
+            //    float tMat = dist_blend_weight(dist, distanceSum, 1.5f);
+            //    tMat = Mathf.Max(0f, Mathf.Min(1.0f, 1.0f - distanceSum / Mathf.Max(0.0001f, 0.25f * data.Smoothing)));
+            //    tMat -= 0.5f;
+            //    tMat = 0.5f + 0.5f * Mathf.Sign(tMat) * (1.0f - Mathf.Pow(Mathf.Abs(1.0f - Mathf.Abs(2f * tMat)), Mathf.Pow(1f + material.MaterialSmoothing, 5f)));
+
+            //    finalColour = Color.Lerp(finalColour, (Vector4)m_sdfMaterials[i].Colour, tMat);
+            //}
+
+            
+
+
+
+            ////Vector4 finalColour = Vector4.zero;
+            ////tempP = p;
+
+            ////for (int i = 0; i < m_sdfData.Count; i++)
+            ////{
+            ////    SDFGPUData data = m_sdfData[i];
+            ////    SDFMaterialGPU material = m_sdfMaterials[i];
+
+            ////    if (data.IsOperation)
+            ////    {
+            ////        tempP = ElongateSpace(tempP, XYZ(data.Data), data.Transform);
+            ////    }
+            ////    else if (data.CombineType == 0)
+            ////    {
+            ////        float dist = SDF_Colour(tempP, data, material, out Vector4 col);
+
+            ////        //col = Utils.Remap(0f, 1f, 100f, 200f, Saturate(col));
+                    
+            ////        float inverseDist = 1f / Mathf.Clamp(dist, smallNumber, bigNumber);
+            ////        float weight = inverseDist / inverseDistanceSum;
+                    
+            ////        Utils.Label(p, $"Dist: {dist}, inverseDist: {inverseDist}, weight: {weight}", line: i, col: col);
+
+            ////        finalColour += col * weight;
+            ////    }
+            ////}
+
+            //////finalColour = Utils.Remap(100f, 200f, 0f, 1f, finalColour);
+
+            ////finalColour = Saturate(finalColour);
+
+            ////Utils.Label(p, "Colour", line: m_sdfData.Count, col: finalColour);
+            
+            //return finalColour;
         }
 
         /// <summary>
@@ -94,7 +188,7 @@ namespace IsoMesh
             normalSmoothing = Mathf.Max(normalSmoothing, MIN_NORMAL_SMOOTHING_CPU);
 
             Vector2 e = new Vector2(normalSmoothing, -normalSmoothing);
-            
+
             return (
                 XYY(e) * Map(p + XYY(e)) +
                 YYX(e) * Map(p + YYX(e)) +
@@ -115,12 +209,12 @@ namespace IsoMesh
 
             float distanceToSurface = 0f;
             float rayTravelDistance = 0f;
-            
+
             // March the distance field until a surface is hit.
             for (int i = 0; i < maxIterations; i++)
             {
                 Vector3 p = origin + direction * rayTravelDistance;
-                
+
                 distanceToSurface = Map(p);
                 rayTravelDistance += distanceToSurface;
 
@@ -138,7 +232,7 @@ namespace IsoMesh
 
             return false;
         }
-        
+
         /// <summary>
         /// Set the global settings of the field.
         /// </summary>
@@ -148,8 +242,11 @@ namespace IsoMesh
         /// <summary>
         /// Set the information relating to all sdf objects, such as their positions and rotations.
         /// </summary>
-        public void SetData(IList<SDFGPUData> data) =>
+        public void SetData(IList<SDFGPUData> data, IList<SDFMaterialGPU> materials)
+        {
             m_sdfData = data;
+            m_sdfMaterials = materials;
+        }
 
         /// <summary>
         /// Set the data relating to meshes specifically, including their sampled distances and UVs.
@@ -161,7 +258,7 @@ namespace IsoMesh
         }
 
         #region SDF Functions
-        
+
         public static Vector3 GetNearestPointOnBox(Vector3 p, Vector3 b, Matrix4x4 worldToLocal) =>
             worldToLocal.inverse.MultiplyPoint(GetNearestPointOnBox(worldToLocal.MultiplyPoint(p), b));
 
@@ -176,7 +273,7 @@ namespace IsoMesh
             Vector3 d = Abs(p) - b;
             Vector3 s = Sign(p);
             float g = Mathf.Max(d.x, Mathf.Max(d.y, d.z));
-            
+
             Vector3 derp;
 
             if (g > 0f)
@@ -187,7 +284,7 @@ namespace IsoMesh
             {
                 derp = Mul(Step(YZX(d), d), Step(ZXY(d), d));
             }
-            
+
             return Mul(s, derp);
         }
 
@@ -196,7 +293,7 @@ namespace IsoMesh
 
         public static bool IsInBox(Vector3 p, Vector3 b, Matrix4x4 worldToLocal) =>
             MapBox(worldToLocal.MultiplyPoint(p), b) < 0f;
-        
+
         public static float MapBox(Vector3 p, Vector3 b, Matrix4x4 worldToLocal) =>
             MapBox(worldToLocal.MultiplyPoint(p), b);
 
@@ -227,14 +324,14 @@ namespace IsoMesh
             Vector2 d = Abs(new Vector2((XZ(p).magnitude), p.y)) - new Vector2(h, r);
             return Mathf.Min(Mathf.Max(d.x, d.y), 0f) + Max(d, 0f).magnitude;
         }
-        
+
         public static float MapTorus(Vector3 p, Vector2 t)
         {
             Vector2 q = new Vector2(XZ(p).magnitude - t.x, p.y);
             return q.magnitude - t.y;
         }
 
-        public static float MapSphere(Vector3 p, float radius) => 
+        public static float MapSphere(Vector3 p, float radius) =>
             p.magnitude - radius;
 
         // polynomial smooth min (k = 0.1);
@@ -315,7 +412,7 @@ namespace IsoMesh
                 YXY(e) * SampleAssetInterpolated(p + YXY(e), data, boundsOffset) +
                 XXX(e) * SampleAssetInterpolated(p + XXX(e), data, boundsOffset)).normalized;
         }
-        
+
         // returns the vector pointing to the surface of the mesh representation, as well as the sign
         // (negative for inside, positive for outside)
         // this can be used to recreate a signed distance field
@@ -339,7 +436,7 @@ namespace IsoMesh
 
             return finalVec;
         }
-        
+
         private float GetMeshSignedDistance(int x, int y, int z, SDFGPUData data)
         {
             int index = CellCoordinateToIndex(x, y, z, data);
@@ -377,7 +474,7 @@ namespace IsoMesh
             Mathf.InverseLerp(minBounds.z + boundsOffset, maxBounds.z - boundsOffset, p.z)
             );
         }
-        
+
         #endregion
 
         #region Helper Functions
@@ -386,6 +483,7 @@ namespace IsoMesh
         // or make it easier to convert cell coordinates to world space positions or 1d array indices
 
         private static Vector2 XZ(Vector3 v) => new Vector2(v.x, v.z);
+        private static Vector3 XYZ(Vector4 v) => new Vector3(v.x, v.y, v.z);
         private static Vector3 XYY(Vector2 v) => new Vector3(v.x, v.y, v.y);
         private static Vector3 YYX(Vector2 v) => new Vector3(v.y, v.y, v.x);
         private static Vector3 YXY(Vector2 v) => new Vector3(v.y, v.x, v.y);
@@ -441,6 +539,15 @@ namespace IsoMesh
         private static Vector3 Max(Vector3 input1, float input2) =>
             new Vector3(Mathf.Max(input1.x, input2), Mathf.Max(input1.y, input2), Mathf.Max(input1.z, input2));
 
+        private static Vector2 Saturate(Vector2 input) =>
+            new Vector2(Mathf.Clamp01(input.x), Mathf.Clamp01(input.y));
+
+        private static Vector3 Saturate(Vector3 input) =>
+            new Vector3(Mathf.Clamp01(input.x), Mathf.Clamp01(input.y), Mathf.Clamp01(input.z));
+
+        private static Vector4 Saturate(Vector4 input) =>
+            new Vector4(Mathf.Clamp01(input.x), Mathf.Clamp01(input.y), Mathf.Clamp01(input.z), Mathf.Clamp01(input.w));
+
         private static Vector3 CellCoordinateToVertex(int x, int y, int z, SDFGPUData data)
         {
             float gridSize = data.Size - 1f;
@@ -458,7 +565,7 @@ namespace IsoMesh
             int size = data.Size;
             return data.SampleStartIndex + (x + y * size + z * size * size);
         }
-        
+
         #endregion
     }
 }

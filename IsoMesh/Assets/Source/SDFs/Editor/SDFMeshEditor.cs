@@ -5,23 +5,15 @@ using UnityEditor;
 
 namespace IsoMesh.Editor
 {
-    [CustomEditor(typeof(SDFPrimitive))]
+    [CustomEditor(typeof(SDFMesh))]
     [CanEditMultipleObjects]
-    public class SDFPrimitiveEditor : UnityEditor.Editor
+    public class SDFMeshEditor : UnityEditor.Editor
     {
         private static class Labels
         {
-            public static GUIContent Type = new GUIContent("Type", "Which primitive this object represents.");
+            public static GUIContent MeshAsset = new GUIContent("Mesh Asset", "An SDFMeshAsset ScriptableObject. You can create these in 'Tools/Mesh to SDF'");
             public static GUIContent Operation = new GUIContent("Operation", "How this primitive is combined with the previous SDF objects in the hierarchy.");
             public static GUIContent Flip = new GUIContent("Flip", "Turn this object inside out.");
-            public static GUIContent Bounds = new GUIContent("Bounds", "The xyz bounds of the cuboid.");
-            public static GUIContent Roundedness = new GUIContent("Roundedness", "How curved are the cuboids corners and edges.");
-            public static GUIContent Radius = new GUIContent("Radius", "The radius of the sphere.");
-            public static GUIContent CylinderRadius = new GUIContent("Radius", "The radius of the cylinder.");
-            public static GUIContent CylinderLength = new GUIContent("Length", "The length of the cylinder.");
-            public static GUIContent MajorRadius = new GUIContent("Major Radius", "The radius of the whole torus.");
-            public static GUIContent MinorRadius = new GUIContent("Minor Radius", "The radius of the tube of the torus.");
-            public static GUIContent Thickness = new GUIContent("Thickness", "The thickness of the frame.");
             public static GUIContent Smoothing = new GUIContent("Smoothing", "How smoothly this sdf blends with the previous SDFs.");
 
             public static GUIContent Material = new GUIContent("Material", "The visual properties of this SDF object.");
@@ -30,12 +22,13 @@ namespace IsoMesh.Editor
             //public static GUIContent MaterialSmoothing = new GUIContent("Material Smoothing", "How sharply this material is combined with other SDF objects.");
             public static GUIContent Metallic = new GUIContent("Metallic", "Metallicity of this object's material.");
             public static GUIContent Smoothness = new GUIContent("Smoothness", "Smoothness of this object's material.");
+
+            public static string MeshAssetRequiredMessage = "SDF Mesh objects must have a reference to an SDFMeshAsset ScriptableObject. You can create these in 'Tools/Mesh to SDF'";
         }
 
         private class SerializedProperties
         {
-            public SerializedProperty Type { get; }
-            public SerializedProperty Data { get; }
+            public SerializedProperty MeshAsset { get; }
             public SerializedProperty Operation { get; }
             public SerializedProperty Flip { get; }
             public SerializedProperty Smoothing { get; }
@@ -43,14 +36,12 @@ namespace IsoMesh.Editor
             public SerializedProperty Material { get; }
             public SerializedProperty Colour { get; }
             public SerializedProperty Emission { get; }
-            //public SerializedProperty MaterialSmoothing { get; }
             public SerializedProperty Metallic { get; }
             public SerializedProperty Smoothness { get; }
 
             public SerializedProperties(SerializedObject serializedObject)
             {
-                Type = serializedObject.FindProperty("m_type");
-                Data = serializedObject.FindProperty("m_data");
+                MeshAsset = serializedObject.FindProperty("m_asset");
                 Operation = serializedObject.FindProperty("m_operation");
                 Flip = serializedObject.FindProperty("m_flip");
                 Smoothing = serializedObject.FindProperty("m_smoothing");
@@ -58,7 +49,6 @@ namespace IsoMesh.Editor
                 Material = serializedObject.FindProperty("m_material");
                 Colour = Material.FindPropertyRelative("m_colour");
                 Emission = Material.FindPropertyRelative("m_emission");
-                //MaterialSmoothing = Material.FindPropertyRelative("m_materialSmoothing");
                 Metallic = Material.FindPropertyRelative("m_metallic");
                 Smoothness = Material.FindPropertyRelative("m_smoothness");
             }
@@ -66,7 +56,7 @@ namespace IsoMesh.Editor
 
 
         private SerializedProperties m_serializedProperties;
-        private SDFPrimitive m_sdfPrimitive;
+        private SDFMesh m_sdfMesh;
         private SerializedPropertySetter m_setter;
 
         private bool m_isMaterialOpen = true;
@@ -74,7 +64,7 @@ namespace IsoMesh.Editor
         private void OnEnable()
         {
             m_serializedProperties = new SerializedProperties(serializedObject);
-            m_sdfPrimitive = target as SDFPrimitive;
+            m_sdfMesh = target as SDFMesh;
             m_setter = new SerializedPropertySetter(serializedObject);
         }
 
@@ -82,38 +72,20 @@ namespace IsoMesh.Editor
         {
             serializedObject.DrawScript();
             m_setter.Clear();
+            
+            m_setter.DrawProperty(Labels.MeshAsset, m_serializedProperties.MeshAsset);
 
-            m_setter.DrawProperty(Labels.Type, m_serializedProperties.Type);
+            bool hasMeshAsset = m_serializedProperties.MeshAsset.objectReferenceValue;
+
+            if (!hasMeshAsset)
+                EditorGUILayout.HelpBox(Labels.MeshAssetRequiredMessage, MessageType.Warning);
+
+            GUI.enabled = hasMeshAsset;
+
             m_setter.DrawProperty(Labels.Operation, m_serializedProperties.Operation);
             m_setter.DrawProperty(Labels.Flip, m_serializedProperties.Flip);
             m_setter.DrawFloatSetting(Labels.Smoothing, m_serializedProperties.Smoothing, min: 0f);
-
-            using (EditorGUILayout.VerticalScope box = new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-            {
-                switch (m_sdfPrimitive.Type)
-                {
-                    case SDFPrimitiveType.Sphere:
-                        m_setter.DrawVectorSettingX(Labels.Radius, m_serializedProperties.Data, min: 0f);
-                        break;
-                    case SDFPrimitiveType.Torus:
-                        m_setter.DrawVectorSettingX(Labels.MajorRadius, m_serializedProperties.Data, min: 0f);
-                        m_setter.DrawVectorSettingY(Labels.MinorRadius, m_serializedProperties.Data, min: 0f);
-                        break;
-                    case SDFPrimitiveType.Cuboid:
-                        m_setter.DrawVector3Setting(Labels.Bounds, m_serializedProperties.Data, min: 0f);
-                        m_setter.DrawVectorSettingW(Labels.Roundedness, m_serializedProperties.Data, min: 0f);
-                        break;
-                    case SDFPrimitiveType.BoxFrame:
-                        m_setter.DrawVector3Setting(Labels.Bounds, m_serializedProperties.Data, min: 0f);
-                        m_setter.DrawVectorSettingW(Labels.Thickness, m_serializedProperties.Data, min: 0f);
-                        break;
-                    case SDFPrimitiveType.Cylinder:
-                        m_setter.DrawVectorSettingX(Labels.CylinderRadius, m_serializedProperties.Data, min: 0f);
-                        m_setter.DrawVectorSettingY(Labels.CylinderLength, m_serializedProperties.Data, min: 0f);
-                        break;
-                }
-            }
-
+            
             if (m_isMaterialOpen = EditorGUILayout.Foldout(m_isMaterialOpen, Labels.Material, true))
             {
                 using (EditorGUILayout.VerticalScope box = new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
@@ -122,7 +94,6 @@ namespace IsoMesh.Editor
                     {
                         m_setter.DrawProperty(Labels.Colour, m_serializedProperties.Colour);
                         m_setter.DrawProperty(Labels.Emission, m_serializedProperties.Emission);
-                        //m_setter.DrawFloatSetting(Labels.MaterialSmoothing, m_serializedProperties.MaterialSmoothing, min: 0f);
                         m_setter.DrawProperty(Labels.Metallic, m_serializedProperties.Metallic);
                         m_setter.DrawProperty(Labels.Smoothness, m_serializedProperties.Smoothness);
                     }
@@ -130,6 +101,8 @@ namespace IsoMesh.Editor
             }
 
             m_setter.Update();
+
+            GUI.enabled = true;
         }
     }
 }

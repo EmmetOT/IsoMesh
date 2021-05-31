@@ -35,6 +35,7 @@ namespace IsoMesh
             public static readonly int Transform_Matrix4x4 = Shader.PropertyToID("_GroupTransform");
 
             public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
+            public static readonly int SDFMaterials_StructuredBuffer = Shader.PropertyToID("_SDFMaterials");
             public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
             public static readonly int Samples_RWBuffer = Shader.PropertyToID("_Samples");
@@ -49,7 +50,8 @@ namespace IsoMesh
             public static readonly int MeshVertices_RWBuffer = Shader.PropertyToID("_MeshVertices");
             public static readonly int MeshNormals_RWBuffer = Shader.PropertyToID("_MeshNormals");
             public static readonly int MeshTriangles_RWBuffer = Shader.PropertyToID("_MeshTriangles");
-            public static readonly int MeshUVs_RWBuffer = Shader.PropertyToID("_MeshUVs");
+            //public static readonly int MeshUVs_RWBuffer = Shader.PropertyToID("_MeshUVs");
+            public static readonly int MeshVertexMaterials_RWBuffer = Shader.PropertyToID("_MeshVertexMaterials");
 
             public static readonly int IntermediateVertexBuffer_AppendBuffer = Shader.PropertyToID("_IntermediateVertexBuffer");
             public static readonly int IntermediateVertexBuffer_StructuredBuffer = Shader.PropertyToID("_IntermediateVertexBuffer_Structured");
@@ -107,14 +109,16 @@ namespace IsoMesh
         private ComputeBuffer m_meshVerticesBuffer;
         private ComputeBuffer m_meshNormalsBuffer;
         private ComputeBuffer m_meshTrianglesBuffer;
-        private ComputeBuffer m_meshUVsBuffer;
+        //private ComputeBuffer m_meshUVsBuffer;
+        private ComputeBuffer m_meshVertexMaterialsBuffer;
         private ComputeBuffer m_intermediateVertexBuffer;
         private ComputeBuffer m_counterBuffer;
         private ComputeBuffer m_proceduralArgsBuffer;
 
         private NativeArray<Vector3> m_nativeArrayVertices;
         private NativeArray<Vector3> m_nativeArrayNormals;
-        private NativeArray<Vector2> m_nativeArrayUVs;
+        //private NativeArray<Vector2> m_nativeArrayUVs;
+        private NativeArray<Color> m_nativeArrayColours;
         private NativeArray<int> m_nativeArrayTriangles;
 
         private VertexData[] m_vertices;
@@ -341,7 +345,7 @@ namespace IsoMesh
             }
         }
 
-        private void ReallocateNativeArrays(int vertexCount, int triangleCount, ref NativeArray<Vector3> vertices, ref NativeArray<Vector3> normals, ref NativeArray<Vector2> uvs, ref NativeArray<int> indices)
+        private void ReallocateNativeArrays(int vertexCount, int triangleCount, ref NativeArray<Vector3> vertices, ref NativeArray<Vector3> normals, ref NativeArray<Color> colours/*, ref NativeArray<Vector2> uvs*/, ref NativeArray<int> indices)
         {
             // to avoid lots of allocations here, i only create new arrays when
             // 1) there's no array to begin with
@@ -360,7 +364,8 @@ namespace IsoMesh
 
             ReallocateArrayIfNeeded(ref vertices, vertexCount);
             ReallocateArrayIfNeeded(ref normals, vertexCount);
-            ReallocateArrayIfNeeded(ref uvs, vertexCount);
+            //ReallocateArrayIfNeeded(ref uvs, vertexCount);
+            ReallocateArrayIfNeeded(ref colours, vertexCount);
             ReallocateArrayIfNeeded(ref indices, triangleCount * 3);
         }
 
@@ -378,19 +383,20 @@ namespace IsoMesh
 
             if (triangleCount > 0)
             {
-                ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
+                ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals/*, ref m_nativeArrayUVs*/, ref m_nativeArrayColours, ref m_nativeArrayTriangles);
 
                 int vertexRequestSize = Mathf.Min(m_nativeArrayVertices.Length, m_meshVerticesBuffer.count, vertexCount);
                 int triangleRequestSize = Mathf.Min(m_nativeArrayTriangles.Length, m_meshTrianglesBuffer.count, triangleCount * 3);
 
                 AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, vertexRequestSize * sizeof(float) * 3, 0);
-                AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
+                //AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
+                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexMaterialsBuffer, vertexRequestSize * SDFMaterialGPU.Stride, 0);
                 AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, triangleRequestSize * sizeof(int), 0);
 
                 AsyncGPUReadback.WaitAllRequests();
 
-                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals, m_nativeArrayUVs, m_nativeArrayTriangles, vertexCount, triangleCount);
+                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals/*, m_nativeArrayUVs*/,m_nativeArrayColours, m_nativeArrayTriangles, vertexCount, triangleCount);
             }
             else
             {
@@ -428,20 +434,21 @@ namespace IsoMesh
 
             if (triangleCount > 0)
             {
-                ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayUVs, ref m_nativeArrayTriangles);
+                ReallocateNativeArrays(vertexCount, triangleCount, ref m_nativeArrayVertices, ref m_nativeArrayNormals, ref m_nativeArrayColours/*m_nativeArrayUVs*/, ref m_nativeArrayTriangles);
 
                 int vertexRequestSize = Mathf.Min(m_nativeArrayVertices.Length, m_meshVerticesBuffer.count, vertexCount);
                 int triangleRequestSize = Mathf.Min(m_nativeArrayTriangles.Length, m_meshTrianglesBuffer.count, triangleCount * 3);
 
                 AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, vertexRequestSize * sizeof(float) * 3, 0);
-                AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
+                //AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
+                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexMaterialsBuffer, vertexRequestSize * SDFMaterialGPU.Stride, 0);
                 AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, triangleRequestSize * sizeof(int), 0);
 
-                while (!vertexRequest.done && !normalRequest.done && !uvRequest.done && !triangleRequest.done)
+                while (!vertexRequest.done && !normalRequest.done && !colourRequest.done/*!uvRequest.done*/ && !triangleRequest.done)
                     yield return null;
 
-                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals, m_nativeArrayUVs, m_nativeArrayTriangles, vertexCount, triangleCount);
+                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals, m_nativeArrayColours/*m_nativeArrayUVs*/, m_nativeArrayTriangles, vertexCount, triangleCount);
             }
             else
             {
@@ -455,7 +462,7 @@ namespace IsoMesh
             m_isCoroutineRunning = false;
         }
 
-        private void SetMeshData(NativeArray<Vector3> vertices, NativeArray<Vector3> normals, NativeArray<Vector2> uvs, NativeArray<int> indices, int vertexCount, int triangleCount)
+        private void SetMeshData(NativeArray<Vector3> vertices, NativeArray<Vector3> normals/*, NativeArray<Vector2> uvs*/, NativeArray<Color> colours, NativeArray<int> indices, int vertexCount, int triangleCount)
         {
             if (MeshRenderer)
                 MeshRenderer.enabled = true;
@@ -477,7 +484,8 @@ namespace IsoMesh
 
             m_mesh.SetVertices(vertices, 0, vertexCount);
             m_mesh.SetNormals(normals, 0, vertexCount);
-            m_mesh.SetUVs(0, uvs, 0, vertexCount);
+            //m_mesh.SetUVs(0, uvs, 0, vertexCount);
+            m_mesh.SetColors(colours, 0, vertexCount);
             m_mesh.SetIndices(indices, 0, triangleCount * 3, MeshTopology.Triangles, 0, calculateBounds: true);
 
             MeshFilter.mesh = m_mesh;
@@ -601,7 +609,8 @@ namespace IsoMesh
             m_meshVerticesBuffer?.Dispose();
             m_meshNormalsBuffer?.Dispose();
             m_meshTrianglesBuffer?.Dispose();
-            m_meshUVsBuffer?.Dispose();
+            //m_meshUVsBuffer?.Dispose();
+            m_meshVertexMaterialsBuffer?.Dispose();
 
             m_intermediateVertexBuffer?.Dispose();
 
@@ -613,7 +622,8 @@ namespace IsoMesh
             m_meshVerticesBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
             m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
             m_meshTrianglesBuffer = new ComputeBuffer(countCubed * 3, sizeof(int), ComputeBufferType.Structured);
-            m_meshUVsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 2, ComputeBufferType.Structured);
+            //m_meshUVsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 2, ComputeBufferType.Structured);
+            m_meshVertexMaterialsBuffer = new ComputeBuffer(countCubed * 3, SDFMaterialGPU.Stride, ComputeBufferType.Structured);
 
             m_intermediateVertexBuffer = new ComputeBuffer(countCubed * 3, NewVertexData.Stride, ComputeBufferType.Append);
 
@@ -625,7 +635,8 @@ namespace IsoMesh
                 m_propertyBlock.SetBuffer(Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
                 m_propertyBlock.SetBuffer(Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
                 m_propertyBlock.SetBuffer(Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
-                m_propertyBlock.SetBuffer(Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
+                //m_propertyBlock.SetBuffer(Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
+                m_propertyBlock.SetBuffer(Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
             }
 
             UpdateMapKernels(Properties.Samples_RWBuffer, m_samplesBuffer);
@@ -637,7 +648,8 @@ namespace IsoMesh
             m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
+            //m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
 
             m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.IntermediateVertexBuffer_AppendBuffer, m_intermediateVertexBuffer);
@@ -645,7 +657,8 @@ namespace IsoMesh
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
+            //m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.IntermediateVertexBuffer_StructuredBuffer, m_intermediateVertexBuffer);
 
             m_bounds = new Bounds { extents = m_voxelSettings.Extents };
@@ -674,7 +687,8 @@ namespace IsoMesh
             m_meshVerticesBuffer?.Dispose();
             m_meshNormalsBuffer?.Dispose();
             m_meshTrianglesBuffer?.Dispose();
-            m_meshUVsBuffer?.Dispose();
+            //m_meshUVsBuffer?.Dispose();
+            m_meshVertexMaterialsBuffer?.Dispose();
 
             m_intermediateVertexBuffer?.Dispose();
 
@@ -690,8 +704,11 @@ namespace IsoMesh
             if (m_nativeArrayNormals != null && m_nativeArrayNormals.IsCreated)
                 m_nativeArrayNormals.Dispose();
 
-            if (m_nativeArrayUVs != null && m_nativeArrayUVs.IsCreated)
-                m_nativeArrayUVs.Dispose();
+            //if (m_nativeArrayUVs != null && m_nativeArrayUVs.IsCreated)
+            //    m_nativeArrayUVs.Dispose();
+
+            if (m_nativeArrayColours != null && m_nativeArrayColours.IsCreated)
+                m_nativeArrayColours.Dispose();
 
             if (m_nativeArrayTriangles != null && m_nativeArrayTriangles.IsCreated)
                 m_nativeArrayTriangles.Dispose();
@@ -1002,7 +1019,7 @@ namespace IsoMesh
 
         #region SDF Group Methods
 
-        public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
+        public void UpdateDataBuffer(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count)
         {
             if (!m_isEnabled)
                 return;
@@ -1011,6 +1028,7 @@ namespace IsoMesh
                 InitializeComputeShaderSettings();
 
             UpdateMapKernels(Properties.SDFData_StructuredBuffer, computeBuffer);
+            UpdateMapKernels(Properties.SDFMaterials_StructuredBuffer, materialBuffer);
             m_computeShaderInstance.SetInt(Properties.SDFDataCount_Int, count);
 
             if (m_mainSettings.AutoUpdate && !m_isInitializing)

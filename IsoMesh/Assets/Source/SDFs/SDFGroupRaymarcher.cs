@@ -19,6 +19,7 @@ namespace IsoMesh
             public static int Settings_StructuredBuffer = Shader.PropertyToID("_Settings");
 
             public static readonly int SDFData_StructuredBuffer = Shader.PropertyToID("_SDFData");
+            public static readonly int SDFMaterials_StructuredBuffer = Shader.PropertyToID("_SDFMaterials");
             public static readonly int SDFDataCount_Int = Shader.PropertyToID("_SDFDataCount");
 
             public static int Diffuse_Colour = Shader.PropertyToID("_DiffuseColour");
@@ -154,13 +155,16 @@ namespace IsoMesh
             m_renderer.SetPropertyBlock(m_propertyBlock);
         }
 
-        public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count)
+        public void UpdateDataBuffer(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count)
         {
             if (m_propertyBlock == null)
                 m_propertyBlock = new MaterialPropertyBlock();
 
             if (computeBuffer != null && computeBuffer.IsValid())
                 m_propertyBlock.SetBuffer(MaterialProperties.SDFData_StructuredBuffer, computeBuffer);
+
+            if (materialBuffer != null && materialBuffer.IsValid())
+                m_propertyBlock.SetBuffer(MaterialProperties.SDFMaterials_StructuredBuffer, materialBuffer);
 
             m_propertyBlock.SetInt(MaterialProperties.SDFDataCount_Int, count);
 

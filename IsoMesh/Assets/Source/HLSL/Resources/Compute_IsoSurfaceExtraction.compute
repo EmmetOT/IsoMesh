@@ -473,7 +473,8 @@ void TryCreateTriangles(int index, float3 surfacePoint, int cube0, int cube1, in
 
 RWStructuredBuffer<float3> _MeshVertices;
 RWStructuredBuffer<float3> _MeshNormals;
-RWStructuredBuffer<float2> _MeshUVs;
+//RWStructuredBuffer<float2> _MeshUVs;
+RWStructuredBuffer<SDFMaterialGPU> _MeshVertexMaterials;
 RWStructuredBuffer<int> _MeshTriangles;
 
 RWStructuredBuffer<int> _ProceduralArgs;
@@ -491,7 +492,8 @@ void Isosurface_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     VertexData data = _VertexDataPoints_Structured[i_1];
     _MeshVertices[id.x] = data.Vertex;
     _MeshNormals[id.x] = data.Normal;
-    _MeshUVs[id.x] = MapUV(data.Vertex);
+    //_MeshUVs[id.x] = MapUV(data.Vertex);
+    _MeshVertexMaterials[id.x] = MapColour(data.Vertex); // float4(0, 1, 0, 1);
     
     // we can use the vertex index to access the id number of the cell containing it,
     // and with that calculate the coordinate of the cell point
@@ -626,12 +628,14 @@ void Isosurface_AddIntermediateVerticesToIndexBuffer(uint3 id : SV_DispatchThrea
     
     int index = VERTEX_COUNT + id.x;
     
-    float2 uv = _MeshUVs[_MeshTriangles[newVertex.Index]];
+    //float2 uv = _MeshUVs[_MeshTriangles[newVertex.Index]];
+    SDFMaterialGPU material = _MeshVertexMaterials[_MeshTriangles[newVertex.Index]];
     
     _MeshTriangles[newVertex.Index] = index;
     _MeshVertices[index] = newVertex.Vertex;
     _MeshNormals[index] = newVertex.Normal;
-    _MeshUVs[index] = uv;
+    //_MeshUVs[index] = uv;
+    _MeshVertexMaterials[index] = material;
     
     // doing this will mess with the vertex counts above in a race condition
     //InterlockedAdd(VERTEX_COUNT, 1);

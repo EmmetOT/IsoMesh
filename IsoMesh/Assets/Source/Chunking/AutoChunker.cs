@@ -72,7 +72,7 @@ namespace IsoMesh.Chunking
             m_running = false;
         }
         
-        public void UpdateDataBuffer(ComputeBuffer computeBuffer, int count) { }
+        public void UpdateDataBuffer(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count) { }
         public void UpdateSettingsBuffer(ComputeBuffer computeBuffer) { }
 
         public void OnEmpty() { }

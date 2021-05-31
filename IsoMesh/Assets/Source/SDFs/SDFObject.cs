@@ -26,8 +26,12 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        protected float m_smoothing = MIN_SMOOTHING;
+        private SDFMaterial m_material = new SDFMaterial(Color.white, Color.black, 0.5f, 0.5f);
+        public SDFMaterial Material => m_material;
 
+        [SerializeField]
+        protected float m_smoothing = MIN_SMOOTHING;
+        
         protected bool m_isDirty = false;
         private bool m_isOrderDirty = false;
 
@@ -60,6 +64,7 @@ namespace IsoMesh
         }
 
         public abstract SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1);
+        public SDFMaterialGPU GetMaterial() => new SDFMaterialGPU(m_material);
 
         protected void SetDirty() => m_isDirty = true;
 
