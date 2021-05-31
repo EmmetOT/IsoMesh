@@ -55,7 +55,7 @@ Isosurface extraction here refers to converting an isosurface back into a triang
 
 As I say above, in order to use the isosurface extraction just add an SDFGroupMeshGenerator under an SDFGroup. The number of options on this component is almost excessive, but don't let that get you down, they all have tooltips which do some explaining, and if you've done your homework they should feel fairly familiar:
 
-![isomesh3](https://user-images.githubusercontent.com/18707147/118203187-713c6200-b453-11eb-9438-f105f98f4226.png)
+![isomesh10](https://user-images.githubusercontent.com/18707147/120230970-4ec68900-c248-11eb-9669-d531776f0227.png)
 
 Normal settings are handy to control the appearance of the mesh surface. 'Max angle tolerance' will generate new mesh vertices when normals are too distinct from the normal of their triangle. I like to keep this value around 40 degrees, as it retains sharp edges while keeping smooth curves. 'Visual smoothing' changes the distance between samples when generating mesh normals via central differences.
 
@@ -64,8 +64,6 @@ Normal settings are handy to control the appearance of the mesh surface. 'Max an
 There are some additions I've made to try to improve the results of dual contouring. While it produces good edges and corners, QEF can sometimes be a little unstable. I provide optional direct control over the QEF (quadratic error function) constants. I provide two techniques for finding the exact surface intersection points between SDF samples - interpolation is fast but gives kinda poor results at corners. Binary search provides much more exact results but is an iterative solution.
 
 Gradient descent is another iterative improvement which simply moves the vertices back onto the isosurface. Honestly, I see no reason not to always have this on.
-
-The 'nudge' stuff is an experimental solution for reducing artefacts on mesh edges and corners. It moves the mesh vertices a tiny bit in the direction of the sum of the normals at the voxel edge intersections. By itself, this simply 'inflates' the mesh. But alongside gradient descent, it can produce tasty sharp edges, but introduces artefacts of its own. I recommend keeping this value very low if you do use it.
 
 ## Raymarching
 If you're familiar with SDFs, you're familiar with raymarching. They very often go hand-in-hand. [Raymarching will also be very familiar to you if you ever go on ShaderToy.](https://www.shadertoy.com/results?query=raymarch) Again I recommend checking out Inigo Quilez for an in-depth explanation, but raymarching is basically an iterative sort of 'pseudo-raytracing' algorithm for rendering complex surfaces like SDFs.
