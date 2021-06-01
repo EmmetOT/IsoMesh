@@ -27,7 +27,7 @@ If your mesh has UVs you can sample those too. This is currently just experiment
 ![isomesh1](https://user-images.githubusercontent.com/18707147/115974173-d686ec80-a552-11eb-8308-87ddec99cd16.png)
 
 ## Project Structure
-In this project, you'll find three sample scenes: incouding one demonstrating mesh generation and one demonstrating raymarching. (Third is Physics, see below) Both have very similar structures and are just meant to show how to use the tools.
+In this project, you'll find three sample scenes, including one demonstrating mesh generation and one demonstrating raymarching. (Third is Physics, see below) Both have very similar structures and are just meant to show how to use the tools.
 
 SDF objects are divided into three different components. These objects can be set to either 'min' or 'subtract' - min (minimum) objects will combine with others, subtract objects will 'cut holes' in all the objects above them in the hierarchy. These objects can be added to the scene by right-clicking in the hierarchy.
 
