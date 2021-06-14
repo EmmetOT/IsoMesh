@@ -11,6 +11,10 @@
 #define OPERATION_TYPE_ROUND 2
 #define OPERATION_TYPE_ONION 3
 
+#define MATERIAL_TYPE_NONE 0
+#define MATERIAL_TYPE_COLOUR 1
+#define MATERIAL_TYPE_TEXTURE 2
+
 #define MAX_ITERATIONS 256
 #define SURFACE_DISTANCE 0.001
 #define MAX_DISTANCE 350.0
@@ -349,6 +353,25 @@ float Map(float3 p)
     return minDist;
 }
 
+// https://www.shadertoy.com/view/MsdGz2
+float MapThickness(float3 p, float maxDist, float falloff)
+{
+    float3 n = -MapNormal(p);
+    
+    const int nbIte = 8;
+    const float nbIteInv = 1. / float(nbIte);
+    float ao = 0.0;
+    
+    for (int i = 0; i < nbIte; i++)
+    {
+        float l = hash(float(i)) * maxDist;
+        float3 rd = n * l;
+        ao += (l + Map(p + rd)) / pow(2.0, falloff);
+    }
+    
+    return clamp(1. - ao * nbIteInv, 0., 1.);
+}
+
 SDFMaterialGPU MapColour(float3 p)
 {
     const float smallNumber = 0.0000001;
@@ -361,50 +384,76 @@ SDFMaterialGPU MapColour(float3 p)
     [fastopt]
     for (int i = 0; i < _SDFDataCount; i++)
     {
-        SDFGPUData data = _SDFData[i];
         SDFMaterialGPU material = _SDFMaterials[i];
         
-        if (data.IsOperation())
+        if (material.MaterialType != MATERIAL_TYPE_NONE)
         {
-            tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-        }
-        else
-        {
-            float dist = sdf(tempP, data);
+            SDFGPUData data = _SDFData[i];
+        
+            if (data.IsOperation())
+            {
+                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+            }
+            else
+            {
+                float dist = sdf(tempP, data);
             
-            inverseDistanceSum += (1.0 / (clamp(dist, smallNumber, bigNumber)));
+                inverseDistanceSum += (1.0 / (clamp(dist, smallNumber, bigNumber)));
+            }
         }
     }
     
     SDFMaterialGPU final;
+    final.MaterialType = 1;
+    final.TextureIndex = 0;
     final.Colour = float3(0, 0, 0);
     final.Emission = float3(0, 0, 0);
     final.Metallic = 0;
     final.Smoothness = 0;
+    final.Thickness = 0;
+    final.SubsurfaceColour = float3(0, 0, 0);
+    final.SubsurfaceScatteringPower = 0;
     
     tempP = p;
     
     [fastopt]
     for (int j = 0; j < _SDFDataCount; j++)
     {
-        SDFGPUData data = _SDFData[j];
         SDFMaterialGPU material = _SDFMaterials[j];
         
-        if (data.IsOperation())
+        if (material.MaterialType != MATERIAL_TYPE_NONE)
         {
-            tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-        }
-        else
-        {
-            float3 col;
-            float dist = sdf(tempP, data); //sdf_colour(tempP, data, material, col);
-            float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
-            float weight = saturate(inverseDist / inverseDistanceSum);
+            SDFGPUData data = _SDFData[j];
+            
+            if (data.IsOperation())
+            {
+                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+            }
+            else
+            {
+                float3 col;
+                float dist = sdf(tempP, data); //sdf_colour(tempP, data, material, col);
+                float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
+                float weight = saturate(inverseDist / inverseDistanceSum);
 
-            final.Colour += material.Colour * weight;
-            final.Emission += material.Emission * weight;
-            final.Metallic += material.Metallic * weight;
-            final.Smoothness += material.Smoothness * weight;
+                if (material.MaterialType == MATERIAL_TYPE_COLOUR)
+                {
+                    final.Colour += material.Colour * weight;
+                }
+                else
+                {
+                    // temporary - just display UVs as colours.
+                    // in future im going to try pass the weights out as interpolators and use them along with the UVs to sample a linear combination of each texture
+                    float ignore;
+                    final.Colour += float3(sdf_uv(p, data, ignore), 0) * weight;
+                }
+                
+                final.Emission += material.Emission * weight;
+                final.Metallic += material.Metallic * weight;
+                final.Smoothness += material.Smoothness * weight;
+                final.SubsurfaceColour += material.SubsurfaceColour * weight;
+                final.SubsurfaceScatteringPower += material.SubsurfaceScatteringPower * weight;
+            }
         }
     }
     
@@ -412,6 +461,9 @@ SDFMaterialGPU MapColour(float3 p)
     final.Emission = saturate(final.Emission);
     final.Metallic = saturate(final.Metallic);
     final.Smoothness = saturate(final.Smoothness);
+    final.Thickness = MapThickness(p, _Settings[0].ThicknessMaxDistance, _Settings[0].ThicknessFalloff);
+    final.SubsurfaceColour = saturate(final.SubsurfaceColour);
+    final.SubsurfaceScatteringPower = saturate(final.SubsurfaceScatteringPower);
     
     return final;
 }
@@ -477,23 +529,6 @@ float3 MapNormal(float3 p, float smoothing)
         e.yyx * Map(p + e.yyx) +
         e.yxy * Map(p + e.yxy) +
         e.xxx * Map(p + e.xxx));
-}
-
-// https://www.shadertoy.com/view/MsdGz2
-float MapThickness(float3 p, float3 n, float maxDist, float falloff)
-{
-    const int nbIte = 8;
-    const float nbIteInv = 1. / float(nbIte);
-    float ao = 0.0;
-    
-    for (int i = 0; i < nbIte; i++)
-    {
-        float l = hash(float(i)) * maxDist;
-        float3 rd = normalize(-n) * l;
-        ao += (l + Map(p + rd)) / pow(2.0, falloff);
-    }
-    
-    return clamp(1. - ao * nbIteInv, 0., 1.);
 }
 
 #endif // COMPUTE_MAP_INCLUDED

@@ -80,17 +80,23 @@ struct SDFGPUData
 
 struct SDFMaterialGPU
 {
+    int MaterialType;
+    int TextureIndex;
     float3 Colour;
     float3 Emission;
     //float ColourSmoothing;
     float Metallic;
     float Smoothness;
+    float Thickness;
+    float3 SubsurfaceColour;
+    float SubsurfaceScatteringPower;
 };
 
 struct Settings
 {
-    //float Smoothing; // the input to the smooth min function
     float NormalSmoothing; // the 'epsilon' value for computing the gradient, affects how smoothed out the normals are
+    float ThicknessMaxDistance;
+    float ThicknessFalloff;
 };
 
 

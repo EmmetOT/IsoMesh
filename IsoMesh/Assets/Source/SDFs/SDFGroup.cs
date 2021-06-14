@@ -52,11 +52,12 @@ namespace IsoMesh
         [SerializeField]
         private float m_normalSmoothing = 0.015f;
         public float NormalSmoothing => m_normalSmoothing;
-        public void SetNormalSmoothing(float normalSmoothing)
-        {
-            m_normalSmoothing = normalSmoothing;
-            OnSettingsChanged();
-        }
+
+        [SerializeField]
+        private float m_thicknessMaxDistance = 0f;
+
+        [SerializeField]
+        private float m_thicknessFalloff = 0f;
 
         private List<ISDFGroupComponent> m_sdfComponents = new List<ISDFGroupComponent>();
 
@@ -183,7 +184,7 @@ namespace IsoMesh
             CompilationPipeline.compilationStarted += OnCompilationStarted;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 #endif
-            
+
             m_isEnabled = true;
             m_isGlobalMeshDataDirty = true;
             m_isLocalDataDirty = true;
@@ -210,7 +211,7 @@ namespace IsoMesh
             CompilationPipeline.compilationStarted -= OnCompilationStarted;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
 #endif
-            
+
             m_isEnabled = false;
             IsReady = false;
 
@@ -392,7 +393,7 @@ namespace IsoMesh
 
             if (m_meshPackedUVs.Count > 0)
                 m_meshPackedUVsBuffer.SetData(m_meshPackedUVs);
-            
+
             m_isGlobalMeshDataDirty = false;
 
             return newBuffers;
@@ -497,7 +498,7 @@ namespace IsoMesh
                 m_dataBuffer.SetData(m_data);
                 m_materialBuffer.SetData(m_materials);
             }
-            
+
             Mapper.SetData(m_data, m_materials);
 
             // if we also changed the global mesh data buffer in this method, we need to send that as well
@@ -522,7 +523,9 @@ namespace IsoMesh
             m_settingsArray[0] = new Settings()
             {
                 //Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing),
-                NormalSmoothing = Mathf.Max(MIN_SMOOTHING, m_normalSmoothing)
+                NormalSmoothing = Mathf.Max(MIN_SMOOTHING, m_normalSmoothing),
+                ThicknessMaxDistance = m_thicknessMaxDistance,
+                ThicknessFalloff = m_thicknessFalloff,
             };
 
             if (m_settingsBuffer == null || !m_settingsBuffer.IsValid())
@@ -551,7 +554,7 @@ namespace IsoMesh
         {
             // this ensures "m_isEnabled" is set to false while transitioning between play modes
             m_isEnabled = stateChange == PlayModeStateChange.EnteredPlayMode || stateChange == PlayModeStateChange.EnteredEditMode;
-            
+
             m_meshSamplesBuffer?.Dispose();
             m_meshPackedUVsBuffer?.Dispose();
         }
@@ -562,10 +565,12 @@ namespace IsoMesh
 
         public struct Settings
         {
-            public static int Stride => sizeof(float);// * 2;
+            public static int Stride => sizeof(float) * 3;
 
-            //public float Smoothing;     // the input to the smooth min function
             public float NormalSmoothing;   // the 'epsilon' value for computing the gradient, affects how smoothed out the normals are
+            public float ThicknessMaxDistance;
+            public float ThicknessFalloff;
+
         }
 
         #endregion
@@ -589,7 +594,7 @@ namespace IsoMesh
         public float GetDistanceToSurface(Vector3 p) => Mapper.Map(p);
 
         public bool OverlapSphere(Vector3 centre, float radius) => Mapper.Map(centre) <= radius;
-        
+
         //public bool OverlapBox(Vector3 centre, Vector3 halfExtents, bool surfaceOnly = true) => OverlapBox(centre, halfExtents, Quaternion.identity, surfaceOnly);
 
         public bool OverlapBox(Vector3 centre, Vector3 halfExtents)

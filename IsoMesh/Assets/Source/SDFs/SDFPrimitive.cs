@@ -40,6 +40,46 @@ namespace IsoMesh
             Group?.Register(this);
         }
 
+        public Vector3 CubeBounds
+        {
+            get
+            {
+                if (m_type == SDFPrimitiveType.BoxFrame || m_type == SDFPrimitiveType.Cuboid)
+                    return new Vector3(m_data.x, m_data.y, m_data.z);
+
+                return Vector3.zero;
+            }
+        }
+
+        public float SphereRadius
+        {
+            get
+            {
+                if (m_type == SDFPrimitiveType.Sphere)
+                    return m_data.x;
+
+                return 0f;
+            }
+        }
+
+        public void SetCubeBounds(Vector3 vec)
+        {
+            if (m_type == SDFPrimitiveType.BoxFrame || m_type == SDFPrimitiveType.Cuboid)
+            {
+                m_data = new Vector4(vec.x, vec.y, vec.z, m_data.w);
+                SetDirty();
+            }
+        }
+
+        public void SetSphereRadius(float radius)
+        {
+            if (m_type == SDFPrimitiveType.Sphere)
+            {
+                m_data = m_data.SetX(Mathf.Max(0f, radius));
+                SetDirty();
+            }
+        }
+
         public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
         {
             // note: has room for six more floats (minbounds, maxbounds)

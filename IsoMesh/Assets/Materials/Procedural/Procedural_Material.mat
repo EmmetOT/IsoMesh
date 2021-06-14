@@ -9,7 +9,7 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: Procedural_Material
   m_Shader: {fileID: -6465566751694194690, guid: 0c900dd24ae73dd4b8c0eac8b4dfed74, type: 3}
-  m_ShaderKeywords: 
+  m_ShaderKeywords: APPLYSUBSURFACESCATTERING
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
@@ -77,6 +77,8 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - APPLYSUBSURFACESCATTERING: 1
+    - Subsurface_Scattering_Power: 1.8
     - _AlphaClip: 0
     - _Blend: 0
     - _BumpScale: 1
@@ -104,6 +106,7 @@ Material:
     - _WorkflowMode: 1
     - _ZWrite: 1
     m_Colors:
+    - Subsurface_Colour: {r: 1, g: 0.6556604, b: 0.6556604, a: 1}
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 0}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}

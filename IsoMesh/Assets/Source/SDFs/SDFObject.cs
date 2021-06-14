@@ -26,7 +26,7 @@ namespace IsoMesh
         }
 
         [SerializeField]
-        private SDFMaterial m_material = new SDFMaterial(Color.white, Color.black, 0.5f, 0.5f);
+        private SDFMaterial m_material = new SDFMaterial(Color.white, Color.black, 0.5f, 0.5f, Color.black, 0f);
         public SDFMaterial Material => m_material;
 
         [SerializeField]
