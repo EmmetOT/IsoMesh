@@ -48,7 +48,7 @@ namespace IsoMesh
         public Color SubsurfaceColour => m_subsurfaceColour;
 
         [SerializeField]
-        [Range(0f, 1f)]
+        [Min(0f)]
         private float m_subsurfaceScatteringPower;
         public float SubsurfaceScatteringPower => m_subsurfaceScatteringPower;
 

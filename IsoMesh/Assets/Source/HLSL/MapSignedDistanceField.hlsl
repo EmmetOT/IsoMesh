@@ -458,12 +458,12 @@ SDFMaterialGPU MapColour(float3 p)
     }
     
     final.Colour = saturate(final.Colour);
-    final.Emission = saturate(final.Emission);
+    final.Emission = final.Emission;
     final.Metallic = saturate(final.Metallic);
     final.Smoothness = saturate(final.Smoothness);
     final.Thickness = MapThickness(p, _Settings[0].ThicknessMaxDistance, _Settings[0].ThicknessFalloff);
-    final.SubsurfaceColour = saturate(final.SubsurfaceColour);
-    final.SubsurfaceScatteringPower = saturate(final.SubsurfaceScatteringPower);
+    final.SubsurfaceColour = final.SubsurfaceColour;
+    final.SubsurfaceScatteringPower = final.SubsurfaceScatteringPower;
     
     return final;
 }

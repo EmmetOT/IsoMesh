@@ -79,6 +79,8 @@ Material:
     m_Floats:
     - APPLYSUBSURFACESCATTERING: 1
     - Subsurface_Scattering_Power: 1.8
+    - TestDefault0_25: 6
+    - TestDefault1_5: 30
     - _AlphaClip: 0
     - _Blend: 0
     - _BumpScale: 1
