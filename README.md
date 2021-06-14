@@ -5,7 +5,7 @@ My motivation for making this was simple: I want to make a game in which I morph
 
 I decided to share my code here because it represents a lot of trial and error and research on my part. And frankly, I just think it's cool.
 
-![isomesh9](https://user-images.githubusercontent.com/18707147/120230880-23dc3500-c248-11eb-9d99-8f2d7a88f247.png)
+![isomesh10](https://user-images.githubusercontent.com/18707147/121936495-99b0c800-cd41-11eb-910b-83113b790c86.gif)
 
 The project is currently being developed and tested on Unity 2021.2.0a16. [(Why are you using an alpha version of Unity?)](https://github.com/EmmetOT/IsoMesh#why-are-you-using-an-alpha-version-of-unity)
 
