@@ -61,7 +61,7 @@ Normal settings are handy to control the appearance of the mesh surface. 'Max an
 
 ![isomesh4](https://user-images.githubusercontent.com/18707147/115974786-21a2fe80-a557-11eb-84a0-62c28b537501.png)
 
-There are some additions I've made to try to improve the results of dual contouring. While it produces good edges and corners, QEF can sometimes be a little unstable. I provide optional direct control over the QEF (quadratic error function) constants. I provide two techniques for finding the exact surface intersection points between SDF samples - interpolation is fast but gives kinda poor results at corners. Binary search provides much more exact results but is an iterative solution.
+I provide two techniques for finding the exact surface intersection points between SDF samples - interpolation is fast but gives kinda poor results at corners. Binary search provides much more exact results but is an iterative solution.
 
 Gradient descent is another iterative improvement which simply moves the vertices back onto the isosurface. Honestly, I see no reason not to always have this on.
 
