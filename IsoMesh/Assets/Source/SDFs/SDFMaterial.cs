@@ -28,9 +28,9 @@ namespace IsoMesh
         private Color m_emission;
         public Color Emission => m_emission;
 
-        //[SerializeField]
-        //private float m_materialSmoothing;
-        //public float MaterialSmoothing => m_materialSmoothing;
+        [SerializeField]
+        private float m_materialSmoothing;
+        public float MaterialSmoothing => m_materialSmoothing;
 
         [SerializeField]
         [Range(0f, 1f)]
@@ -59,7 +59,7 @@ namespace IsoMesh
             Texture
         }
 
-        public SDFMaterial(Color mainCol, Color emission, float metallic, float smoothness, Color subsurfaceColour, float subsurfaceScatteringPower)
+        public SDFMaterial(Color mainCol, Color emission, float metallic, float smoothness, Color subsurfaceColour, float subsurfaceScatteringPower, float materialSmoothing)
         {
             m_type = MaterialType.Colour;
             m_texture = default;
@@ -68,7 +68,8 @@ namespace IsoMesh
             m_metallic = metallic;
             m_smoothness = smoothness;
             m_subsurfaceColour = subsurfaceColour;
-            m_subsurfaceScatteringPower = smoothness;
+            m_subsurfaceScatteringPower = subsurfaceScatteringPower;
+            m_materialSmoothing = materialSmoothing;
         }
     }
 
@@ -76,7 +77,7 @@ namespace IsoMesh
     [StructLayout(LayoutKind.Sequential)]
     public struct SDFMaterialGPU
     {
-        public static int Stride => sizeof(float) * 13 + sizeof(int) * 2;
+        public static int Stride => sizeof(float) * 14 + sizeof(int) * 2;
 
         public int MaterialType;
         public int TextureIndex;
@@ -87,6 +88,7 @@ namespace IsoMesh
         public float Thickness;
         public Vector3 SubsurfaceColour;
         public float SubsurfaceScatteringPower;
+        public float MaterialSmoothing;
 
         public SDFMaterialGPU(SDFMaterial material)
         {
@@ -99,6 +101,7 @@ namespace IsoMesh
             Thickness = 0f;
             SubsurfaceColour = (Vector4)material.SubsurfaceColour;
             SubsurfaceScatteringPower = material.SubsurfaceScatteringPower;//Mathf.Lerp(5f, 0f, material.SubsurfaceScatteringPower);
+            MaterialSmoothing = material.MaterialSmoothing;
         }
     }
 }

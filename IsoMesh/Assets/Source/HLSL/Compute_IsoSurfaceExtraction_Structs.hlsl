@@ -84,13 +84,46 @@ struct SDFMaterialGPU
     int TextureIndex;
     float3 Colour;
     float3 Emission;
-    //float ColourSmoothing;
     float Metallic;
     float Smoothness;
     float Thickness;
     float3 SubsurfaceColour;
     float SubsurfaceScatteringPower;
+    float MaterialSmoothing;
 };
+
+// interpolate two materials, but note that 'materialtype' and 'textureindex' cant be interpolated
+SDFMaterialGPU lerpMaterial(SDFMaterialGPU a, SDFMaterialGPU b, float t)
+{
+    SDFMaterialGPU result;
+    result.MaterialType = 1;
+    result.TextureIndex = 0;
+    result.Colour = lerp(a.Colour, b.Colour, t);
+    result.Emission = lerp(a.Emission, b.Emission, t);
+    result.Metallic = lerp(a.Metallic, b.Metallic, t);
+    result.Smoothness = lerp(a.Smoothness, b.Smoothness, t);
+    result.Thickness = lerp(a.Thickness, b.Thickness, t);
+    result.SubsurfaceColour = lerp(a.SubsurfaceColour, b.SubsurfaceColour, t);
+    result.SubsurfaceScatteringPower = lerp(a.SubsurfaceScatteringPower, b.SubsurfaceScatteringPower, t);
+    result.MaterialSmoothing = lerp(a.MaterialSmoothing, b.MaterialSmoothing, t);
+    return result;
+}
+
+SDFMaterialGPU negate(SDFMaterialGPU mat)
+{
+    SDFMaterialGPU result;
+    result.MaterialType = 1;
+    result.TextureIndex = 0;
+    result.Colour = -mat.Colour;
+    result.Emission = -mat.Emission;
+    result.Metallic = -mat.Metallic;
+    result.Smoothness = -mat.Smoothness;
+    result.Thickness = -mat.Thickness;
+    result.SubsurfaceColour = -mat.SubsurfaceColour;
+    result.SubsurfaceScatteringPower = -mat.SubsurfaceScatteringPower;
+    result.MaterialSmoothing = -mat.MaterialSmoothing;
+    return result;
+}
 
 struct Settings
 {

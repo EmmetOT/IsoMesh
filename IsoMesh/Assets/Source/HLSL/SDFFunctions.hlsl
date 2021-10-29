@@ -156,16 +156,72 @@ float sdf_op_smin(float a, float b, float k)
     return min(a, b) - h * h * k * (1.0 / 4.0);
 }
 
+//// smooth min but also smoothly combines associated float3s (e.g. colours)
+//float sdf_op_smin_colour(float d1, float d2, float3 v1, float3 v2, float k, float vSmoothing, out float3 vResult)
+//{
+//    float h = saturate(0.5 + 0.5 * (d2 - d1) / k);
+//    float vH = saturate(0.5 + 0.5 * (d2 - d1) / vSmoothing);
+    
+//    vResult = lerp(v2, v1, vH);
+//    return lerp(d2, d1, h) - k * h * (1.0 - h);
+//}
+
+// smooth min but also smoothly combines associated material
+float sdf_op_smin_material(float d1, float d2, SDFMaterialGPU v1, SDFMaterialGPU v2, float k, float vSmoothing, out SDFMaterialGPU vResult)
+{
+    float h = saturate(0.5 + 0.5 * (d2 - d1) / k);
+    float vH = saturate(0.5 + 0.5 * (d2 - d1) / vSmoothing);
+    
+    vResult = lerpMaterial(v2, v1, vH);
+    return lerp(d2, d1, h) - k * h * (1.0 - h);
+}
+
 float sdf_op_smoothIntersection(float d1, float d2, float k)
 {
-    float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    float h = saturate(0.5 - 0.5 * (d2 - d1) / k);
     return lerp(d2, d1, h) + k * h * (1.0 - h);
 }
 
+//// smooth intersection but also smoothly intersects associated float3s (e.g. colours)
+//float sdf_op_smoothIntersection_colour(float d1, float d2, float3 v1, float3 v2, float k, float vSmoothing, out float3 vResult)
+//{
+//    float h = saturate(0.5 - 0.5 * (d2 - d1) / k);
+//    float vH = saturate(0.5 - 0.5 * (d2 - d1) / vSmoothing);
+    
+//    vResult = lerp(v2, v1, vH);
+//    return lerp(d2, d1, h) + k * h * (1.0 - h);
+//}
+
+
+// smooth intersection but also smoothly intersects associated materials
+float sdf_op_smoothIntersection_material(float d1, float d2, SDFMaterialGPU v1, SDFMaterialGPU v2, float k, float vSmoothing, out SDFMaterialGPU vResult)
+{
+    //d2 = -abs(d2);
+    //vSmoothing = -max(0.00001, vSmoothing);
+    
+    float h = saturate(0.5 - 0.5 * (d2 - d1) / k);
+    float vH = saturate(0.5 - 0.5 * (d1 - d2) / vSmoothing);
+    
+    vResult = lerpMaterial(v2, v1, vH);
+    return lerp(d2, d1, h) + k * h * (1.0 - h);
+}
+
+
 float sdf_op_smoothSubtraction(float d1, float d2, float k)
 {
-    float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
+    float h = saturate(0.5 - 0.5 * (d2 + d1) / k);
     return lerp(d2, -d1, h) + k * h * (1.0 - h);
+}
+
+// smooth subtraction but also smoothly subtracts associated float3s (e.g. colours)
+float sdf_op_smoothSubtraction_material(float d1, float d2, SDFMaterialGPU v1, SDFMaterialGPU v2, float k, float vSmoothing, out SDFMaterialGPU vResult)
+{
+    d1 = abs(d1);
+    float h = saturate(0.5 + 0.5 * (d2 - d1) / k);
+    float vH = saturate(0.5 + 0.5 * (d2 - d1) / vSmoothing);
+    
+    vResult = lerpMaterial(v2, v1, vH);
+    return lerp(d2, d1, h) - k * h * (1.0 - h);
 }
 
 float3 sdf_op_twist(float3 p, float k)

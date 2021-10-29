@@ -21,7 +21,7 @@ namespace IsoMesh.Editor
             public static GUIContent MaterialTexture = new GUIContent("Texture", "The texture which will be applied to this object via the UVs of the original mesh.");
             public static GUIContent Colour = new GUIContent("Colour", "Colour of this SDF object.");
             public static GUIContent Emission = new GUIContent("Emission", "Emission of this primitive, must be used alongside post processing (bloom).");
-            //public static GUIContent MaterialSmoothing = new GUIContent("Material Smoothing", "How sharply this material is combined with other SDF objects.");
+            public static GUIContent MaterialSmoothing = new GUIContent("Material Smoothing", "How sharply this material is combined with other SDF objects.");
             public static GUIContent Metallic = new GUIContent("Metallic", "Metallicity of this object's material.");
             public static GUIContent Smoothness = new GUIContent("Smoothness", "Smoothness of this object's material.");
             public static GUIContent SubsurfaceColour = new GUIContent("Subsurface Colour", "Colour of the inside of this SDF object, used by subsurface scattering.");
@@ -42,6 +42,7 @@ namespace IsoMesh.Editor
             public SerializedProperty MaterialTexture { get; }
             public SerializedProperty Colour { get; }
             public SerializedProperty Emission { get; }
+            public SerializedProperty MaterialSmoothing { get; }
             public SerializedProperty Metallic { get; }
             public SerializedProperty Smoothness { get; }
             public SerializedProperty SubsurfaceColour { get; }
@@ -59,6 +60,7 @@ namespace IsoMesh.Editor
                 MaterialTexture = Material.FindPropertyRelative("m_texture");
                 Colour = Material.FindPropertyRelative("m_colour");
                 Emission = Material.FindPropertyRelative("m_emission");
+                MaterialSmoothing = Material.FindPropertyRelative("m_materialSmoothing");
                 Metallic = Material.FindPropertyRelative("m_metallic");
                 Smoothness = Material.FindPropertyRelative("m_smoothness");
                 SubsurfaceColour = Material.FindPropertyRelative("m_subsurfaceColour");
@@ -112,8 +114,8 @@ namespace IsoMesh.Editor
                                 m_setter.DrawProperty(Labels.MaterialTexture, m_serializedProperties.MaterialTexture);
 
                             m_setter.DrawProperty(Labels.Colour, m_serializedProperties.Colour);
+                            m_setter.DrawFloatSetting(Labels.MaterialSmoothing, m_serializedProperties.MaterialSmoothing, min: 0f);
                             m_setter.DrawProperty(Labels.Emission, m_serializedProperties.Emission);
-                            //m_setter.DrawFloatSetting(Labels.MaterialSmoothing, m_serializedProperties.MaterialSmoothing, min: 0f);
                             m_setter.DrawProperty(Labels.Metallic, m_serializedProperties.Metallic);
                             m_setter.DrawProperty(Labels.Smoothness, m_serializedProperties.Smoothness);
                             m_setter.DrawProperty(Labels.SubsurfaceColour, m_serializedProperties.SubsurfaceColour);

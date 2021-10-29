@@ -493,7 +493,7 @@ void Isosurface_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     _MeshVertices[id.x] = data.Vertex;
     _MeshNormals[id.x] = data.Normal;
     //_MeshUVs[id.x] = MapUV(data.Vertex);
-    _MeshVertexMaterials[id.x] = MapColour(data.Vertex); // float4(0, 1, 0, 1);
+    _MeshVertexMaterials[id.x] = MapColour(data.Vertex);
     
     // we can use the vertex index to access the id number of the cell containing it,
     // and with that calculate the coordinate of the cell point

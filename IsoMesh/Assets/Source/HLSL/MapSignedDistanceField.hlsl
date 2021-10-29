@@ -346,12 +346,79 @@ float Map(float3 p)
                 minDist = sdf_op_smoothSubtraction(sdf(p, data), minDist, data.Smoothing);
             else
                 minDist = sdf_op_smoothIntersection(sdf(p, data), minDist, data.Smoothing);
-                
         }
     }
     
     return minDist;
 }
+
+
+SDFMaterialGPU MapColour(float3 p)
+{
+    float minDist = 10000000.0;
+    
+    SDFMaterialGPU final;
+    final.MaterialType = 1;
+    final.TextureIndex = 0;
+    final.Colour = float3(0, 0, 0);
+    final.Emission = float3(0, 0, 0);
+    final.Metallic = 0;
+    final.Smoothness = 0;
+    final.Thickness = 0;
+    final.SubsurfaceColour = float3(0, 0, 0);
+    final.SubsurfaceScatteringPower = 0;
+    final.MaterialSmoothing = 0;
+    
+    if (_SDFDataCount <= 0)
+        return final;
+    
+    SDFGPUData data = _SDFData[0];
+    SDFMaterialGPU material = _SDFMaterials[0];
+    
+    if (material.MaterialType != MATERIAL_TYPE_NONE)
+    {
+        if (data.IsOperation())
+        {
+            p = sdf_op_elongate(p, data.Data.xyz, data.Transform);
+        }
+        else if (data.Operation == 0)
+        {
+            minDist = sdf(p, data);
+            final = material;
+        }
+    }
+    
+    [fastopt]
+    for (int i = 1; i < _SDFDataCount; i++)
+    {
+        data = _SDFData[i];
+        material = _SDFMaterials[i];
+        
+        if (material.MaterialType != MATERIAL_TYPE_NONE)
+        {
+            SDFMaterialGPU materialResult;
+        
+            if (data.IsOperation())
+            {
+                p = sdf_op_elongate(p, data.Data.xyz, data.Transform);
+            }
+            else
+            {
+                if (data.Operation == 0)
+                    minDist = sdf_op_smin_material(minDist, sdf(p, data), final, material, data.Smoothing, material.MaterialSmoothing, materialResult);
+                else if (data.Operation == 1)
+                    minDist = sdf_op_smoothSubtraction_material(minDist, sdf(p, data), final, material, data.Smoothing, material.MaterialSmoothing, materialResult);
+                else
+                    minDist = sdf_op_smoothIntersection_material(minDist, sdf(p, data), final, material, data.Smoothing, material.MaterialSmoothing, materialResult);
+            
+                final = materialResult;
+            }
+        }
+    }
+    
+    return final;
+}
+
 
 // https://www.shadertoy.com/view/MsdGz2
 float MapThickness(float3 p, float maxDist, float falloff)
@@ -372,101 +439,102 @@ float MapThickness(float3 p, float maxDist, float falloff)
     return clamp(1. - ao * nbIteInv, 0., 1.);
 }
 
-SDFMaterialGPU MapColour(float3 p)
-{
-    const float smallNumber = 0.0000001;
-    const float bigNumber = 1000000;
-    //const float blendingSharpness = 2.;
+//SDFMaterialGPU MapColour(float3 p)
+//{
+//    const float smallNumber = 0.0000001;
+//    const float bigNumber = 1000000;
+//    //const float blendingSharpness = 2.;
     
-    float inverseDistanceSum = 0.0;// = 1.0 / clamp(Map(p), smallNumber, bigNumber);
-    float3 tempP = p;
+//    float inverseDistanceSum = 0.0;// = 1.0 / clamp(Map(p), smallNumber, bigNumber);
+//    float3 tempP = p;
     
-    [fastopt]
-    for (int i = 0; i < _SDFDataCount; i++)
-    {
-        SDFMaterialGPU material = _SDFMaterials[i];
+//    [fastopt]
+//    for (int i = 0; i < _SDFDataCount; i++)
+//    {
+//        SDFMaterialGPU material = _SDFMaterials[i];
         
-        if (material.MaterialType != MATERIAL_TYPE_NONE)
-        {
-            SDFGPUData data = _SDFData[i];
+//        if (material.MaterialType != MATERIAL_TYPE_NONE)
+//        {
+//            SDFGPUData data = _SDFData[i];
         
-            if (data.IsOperation())
-            {
-                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            }
-            else
-            {
-                float dist = sdf(tempP, data);
+//            if (data.IsOperation())
+//            {
+//                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+//            }
+//            else
+//            {
+//                float dist = sdf(tempP, data);
             
-                inverseDistanceSum += (1.0 / (clamp(dist, smallNumber, bigNumber)));
-            }
-        }
-    }
+//                inverseDistanceSum += (1.0 / (clamp(dist, smallNumber, bigNumber)));
+//            }
+//        }
+//    }
     
-    SDFMaterialGPU final;
-    final.MaterialType = 1;
-    final.TextureIndex = 0;
-    final.Colour = float3(0, 0, 0);
-    final.Emission = float3(0, 0, 0);
-    final.Metallic = 0;
-    final.Smoothness = 0;
-    final.Thickness = 0;
-    final.SubsurfaceColour = float3(0, 0, 0);
-    final.SubsurfaceScatteringPower = 0;
+//    SDFMaterialGPU final;
+//    final.MaterialType = 1;
+//    final.TextureIndex = 0;
+//    final.Colour = float3(0, 0, 0);
+//    final.Emission = float3(0, 0, 0);
+//    final.Metallic = 0;
+//    final.Smoothness = 0;
+//    final.Thickness = 0;
+//    final.SubsurfaceColour = float3(0, 0, 0);
+//    final.SubsurfaceScatteringPower = 0;
+//    final.MaterialSmoothing = 0;
     
-    tempP = p;
+//    tempP = p;
     
-    [fastopt]
-    for (int j = 0; j < _SDFDataCount; j++)
-    {
-        SDFMaterialGPU material = _SDFMaterials[j];
+//    [fastopt]
+//    for (int j = 0; j < _SDFDataCount; j++)
+//    {
+//        SDFMaterialGPU material = _SDFMaterials[j];
         
-        if (material.MaterialType != MATERIAL_TYPE_NONE)
-        {
-            SDFGPUData data = _SDFData[j];
+//        if (material.MaterialType != MATERIAL_TYPE_NONE)
+//        {
+//            SDFGPUData data = _SDFData[j];
             
-            if (data.IsOperation())
-            {
-                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
-            }
-            else
-            {
-                float3 col;
-                float dist = sdf(tempP, data); //sdf_colour(tempP, data, material, col);
-                float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
-                float weight = saturate(inverseDist / inverseDistanceSum);
+//            if (data.IsOperation())
+//            {
+//                tempP = sdf_op_elongate(tempP, data.Data.xyz, data.Transform);
+//            }
+//            else
+//            {
+//                float3 col;
+//                float dist = sdf(tempP, data); //sdf_colour(tempP, data, material, col);
+//                float inverseDist = 1.0 / clamp(dist, smallNumber, bigNumber);
+//                float weight = saturate(inverseDist / inverseDistanceSum);
 
-                if (material.MaterialType == MATERIAL_TYPE_COLOUR)
-                {
-                    final.Colour += material.Colour * weight;
-                }
-                else
-                {
-                    // temporary - just display UVs as colours.
-                    // in future im going to try pass the weights out as interpolators and use them along with the UVs to sample a linear combination of each texture
-                    float ignore;
-                    final.Colour += float3(sdf_uv(p, data, ignore), 0) * weight;
-                }
+//                if (material.MaterialType == MATERIAL_TYPE_COLOUR)
+//                {
+//                    final.Colour += material.Colour * weight;
+//                }
+//                else
+//                {
+//                    // temporary - just display UVs as colours.
+//                    // in future im going to try pass the weights out as interpolators and use them along with the UVs to sample a linear combination of each texture
+//                    float ignore;
+//                    final.Colour += float3(sdf_uv(p, data, ignore), 0) * weight;
+//                }
                 
-                final.Emission += material.Emission * weight;
-                final.Metallic += material.Metallic * weight;
-                final.Smoothness += material.Smoothness * weight;
-                final.SubsurfaceColour += material.SubsurfaceColour * weight;
-                final.SubsurfaceScatteringPower += material.SubsurfaceScatteringPower * weight;
-            }
-        }
-    }
+//                final.Emission += material.Emission * weight;
+//                final.Metallic += material.Metallic * weight;
+//                final.Smoothness += material.Smoothness * weight;
+//                final.SubsurfaceColour += material.SubsurfaceColour * weight;
+//                final.SubsurfaceScatteringPower += material.SubsurfaceScatteringPower * weight;
+//            }
+//        }
+//    }
     
-    final.Colour = saturate(final.Colour);
-    final.Emission = final.Emission;
-    final.Metallic = saturate(final.Metallic);
-    final.Smoothness = saturate(final.Smoothness);
-    final.Thickness = MapThickness(p, _Settings[0].ThicknessMaxDistance, _Settings[0].ThicknessFalloff);
-    final.SubsurfaceColour = final.SubsurfaceColour;
-    final.SubsurfaceScatteringPower = final.SubsurfaceScatteringPower;
+//    final.Colour = saturate(final.Colour);
+//    final.Emission = final.Emission;
+//    final.Metallic = saturate(final.Metallic);
+//    final.Smoothness = saturate(final.Smoothness);
+//    final.Thickness = MapThickness(p, _Settings[0].ThicknessMaxDistance, _Settings[0].ThicknessFalloff);
+//    final.SubsurfaceColour = final.SubsurfaceColour;
+//    final.SubsurfaceScatteringPower = final.SubsurfaceScatteringPower;
     
-    return final;
-}
+//    return final;
+//}
 
 float2 MapUV(float3 p)
 {
