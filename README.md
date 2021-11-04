@@ -105,7 +105,7 @@ It works surprisingly well, even when moving the sdfs around!
 
 ![isomesh9](https://user-images.githubusercontent.com/18707147/115975715-03410100-a55f-11eb-8c41-3b983217ba64.gif)
 
-## Why are you using an alpha version of Unity?~~
+## Why are you using an alpha version of Unity?
 ~~Note: I left this here for posterity, but Unity has now officially released 2021.2 on the tech stream, so it's no longer in alpha!
 You may notice there is an option to switch between 'Procedural' and 'Mesh Filter' output modes. This changes how the mesh data is handed over to Unity for rendering. The 'Mesh Filter' mode simply drags the mesh data back onto the CPU and passes it in to a Mesh Filter component. Procedural mode is waaaay faster - using Unity's DrawProceduralIndirect to keep the data GPU-side. However, you will need a material which is capable of rendering geometry passed in via ComputeBuffers. This project is in URP, which makes it a bit of a pain to hand-write shaders, [and Unity didn't add a VertexID node until ShaderGraph 12, which is only supported by Unity 2021.2.](https://portal.productboard.com/unity/1-unity-platform-rendering-visual-effects/c/258-shader-graph-vertex-id-instance-id-and-eyeid-nodes)~~
 
