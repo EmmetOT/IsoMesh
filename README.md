@@ -117,7 +117,7 @@ If you have the amplify shader editor, I've included an amplify custom node clas
 
 * [Inigo Quilez](https://www.iquilezles.org/)
 * [Dual Contouring Tutorial](https://www.boristhebrave.com/2018/04/15/dual-contouring-tutorial/)
-* [Analysis and Acceleration of High QualityIsosurface Contouring](http://www.inf.ufrgs.br/~comba/papers/thesis/diss-leonardo.pdf)
+* [Analysis and Acceleration of High Quality Isosurface Contouring](http://www.inf.ufrgs.br/~comba/papers/thesis/diss-leonardo.pdf)
 * [Kosmonaut's Signed Distance Field Journey - a fellow SDF mesh creator](https://kosmonautblog.wordpress.com/2017/05/01/signed-distance-field-rendering-journey-pt-1/)
 * [DreamCat Games' tutorial on Surface Nets](https://bonsairobo.medium.com/smooth-voxel-mapping-a-technical-deep-dive-on-real-time-surface-nets-and-texturing-ef06d0f8ca14)
 * [Local interpolation of surfaces using normal vectors - I use this during the tessellation process to produce smoother geometry](https://stackoverflow.com/questions/25342718/local-interpolation-of-surfaces-using-normal-vectors)
