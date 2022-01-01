@@ -1,9 +1,9 @@
 ﻿#pragma kernel CS_ComputeMeshBounds
 #pragma kernel CS_SampleMeshDistances
 
-#pragma multi_compile _ WRITE_UVS
+#include "./Common.hlsl"
 
-#include "Common.hlsl"
+#pragma multi_compile _ WRITE_UVS
 
 StructuredBuffer<float3> _InputVertices;
 StructuredBuffer<float3> _InputNormals;

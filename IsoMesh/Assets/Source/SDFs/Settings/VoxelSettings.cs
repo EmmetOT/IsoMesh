@@ -2,9 +2,25 @@ using UnityEngine;
 
 namespace IsoMesh
 {
+    public enum CellSizeMode { Fixed, Density };
+
     [System.Serializable]
     public class VoxelSettings
     {
+        [SerializeField]
+        private float m_octtreeNodePadding = 0f;
+        public float OcttreeNodePadding => m_octtreeNodePadding;
+
+        [SerializeField]
+        private float m_octtreeRootWidth = 100f;
+        public float OcttreeRootWidth => m_octtreeRootWidth;
+
+        [SerializeField]
+        private int m_octtreeMaxNodeDepth = 4;
+        public int OcttreeMaxNodeDepth => m_octtreeMaxNodeDepth;
+
+        public float OcttreeRootNodeSize => CellSize * Mathf.Pow(2f, m_octtreeMaxNodeDepth);
+
         [SerializeField]
         private CellSizeMode m_cellSizeMode = CellSizeMode.Fixed;
         public CellSizeMode CellSizeMode => m_cellSizeMode;
@@ -19,7 +35,7 @@ namespace IsoMesh
                 if (m_cellSizeMode == CellSizeMode.Density)
                     return m_volumeSize / m_cellDensity;
 
-                return m_cellSize;
+                return m_cellSize + 0.000017f; // (add some tiny weird number to prevent objects from aligning perfectly with the grid)
             }
         }
 

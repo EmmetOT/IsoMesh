@@ -1,0 +1,609 @@
+﻿#pragma kernel Octtree_AllocateEmptyNodeHashMap
+#pragma kernel Octtree_FindRoots
+#pragma kernel Octtree_FindSurfaceNodes
+#pragma kernel Octtree_SwapBufferCounts
+
+#pragma kernel Mesh_Triangulate
+#pragma kernel Mesh_ApplyQEF
+#pragma kernel Mesh_Finalize
+
+#include "../Definitions.hlsl"
+#include "../Common.hlsl"
+#include "../QEFFunctions.cginc"
+#include "../Compute_IsoSurfaceExtraction_Structs.hlsl"
+#include "../MapSignedDistanceField.hlsl"
+#include "../OcttreeRootHashMap.hlsl"
+
+#define PERTURB (float3(0.00021, 0.00017, 0.00049))
+
+float3 CheckFloat3(float3 input)
+{
+    if (input.x % 1.0 == 0.0)
+        input.x += 0.0001;
+    if (input.y % 1.0 == 0.0)
+        input.y += 0.0001;
+    if (input.z % 1.0 == 0.0)
+        input.z += 0.0001;
+    
+    return input;
+}
+
+
+#define ISOSURFACE_EXTRACTION_TYPE__SURFACENETS 0
+#define ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING 1
+
+#define A_COORD x, y, z
+#define B_COORD x + 1, y, z
+#define C_COORD x, y + 1, z
+#define D_COORD x + 1, y + 1, z
+#define E_COORD x, y, z + 1
+#define F_COORD x + 1, y, z + 1
+#define G_COORD x, y + 1, z + 1
+#define H_COORD x + 1, y + 1, z + 1
+
+#define A 0
+#define B 1
+#define C 2
+#define D 3
+#define E 4
+#define F 5
+#define G 6
+#define H 7
+
+static int edges[12][2] =
+{
+    { A, B },
+    { A, C },
+    { A, E },
+    { B, D }, //      g-------h
+    { B, F }, //     /|      /|
+    { C, D }, //    / |     / |
+    { C, G }, //   c--|----d  |
+    { D, H }, //   |  e----|--f
+    { E, F }, //   | /     | /
+    { E, G }, //   a-------b
+    { F, H },
+    { G, H }
+};
+
+
+static float3 unitCorners[8] =
+{
+    float3(-1, -1, -1), // A
+    float3(1, -1, -1), // B
+    float3(-1, 1, -1), // C
+    float3(1, 1, -1), // D
+    float3(-1, -1, 1), // E
+    float3(1, -1, 1), // F
+    float3(-1, 1, 1), // G
+    float3(1, 1, 1), // H
+};
+
+float _CellSize; // the width/height/depth of every individual cell. again, always a cube
+
+RWStructuredBuffer<int> _Counter;
+#define VERTEX_COUNT _Counter[0]
+#define TRIANGLE_COUNT _Counter[3]
+#define VERTEX_COUNT_DIV_64 _Counter[6]
+#define VERTEX_COUNT_DIV_3 _Counter[9]
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////////// KERNEL #1, CREATE HASHMAP ////////////////////////
+
+[numthreads(64, 1, 1)]
+void Octtree_AllocateEmptyNodeHashMap(int id : SV_DispatchThreadID)
+{
+    if ((uint) id.x >= _Capacity)
+        return;
+    
+    KeyValue kv;
+    kv.Key = EMPTY;
+    kv.Value = -1;
+    
+    _OcttreeRootHashMap[id.x] = kv;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+int _OcttreeDepth;
+RWStructuredBuffer<int> _OcttreeIndirectArgs;
+
+RWStructuredBuffer<OcttreeNode> _OcttreeNodeBuffer_Append;
+RWStructuredBuffer<OcttreeNode> _OcttreeNodeBuffer_Consume;
+
+#define NULL_DISTANCE 1000000.0
+
+#define NODE_COUNT_DIV_64 _OcttreeIndirectArgs[0]
+#define NODE_COUNT _OcttreeIndirectArgs[3]
+#define COLLISION_COUNT _OcttreeIndirectArgs[4]
+
+#define APPEND_COUNT _OcttreeIndirectArgs[5]
+#define CONSUME_COUNT _OcttreeIndirectArgs[6]
+
+bool TryAddRootNode(int3 coords, float rootNodeSize)
+{
+    // hash using the world space position because it's easy to recreate later
+    float3 position = (float3(coords) + 0.5) * rootNodeSize;
+    
+    uint key = HashFloat3(position);
+    uint slot = key % _Capacity;
+    
+    int i = 0;
+    while (i++ < MAX_CHECKS)
+    {
+        uint prev = EMPTY;
+        InterlockedCompareExchange(_OcttreeRootHashMap[slot].Key, EMPTY, key, prev);
+        if (prev == EMPTY)
+        {
+            OcttreeNode node;
+            node.Position = position;
+            node.Width = rootNodeSize;
+            node.Distance = Map(position);
+            //node.Hash = key;
+            //node.ID = key;
+            
+            int index;
+            InterlockedAdd(APPEND_COUNT, 1, index);
+            _OcttreeNodeBuffer_Append[index] = node;
+            
+            InterlockedAdd(NODE_COUNT, 1);
+            return true;
+        }
+
+        if (key == _OcttreeRootHashMap[slot].Key)
+        {
+            InterlockedAdd(COLLISION_COUNT, 1);
+            return false;
+        }
+        else
+        {
+            // collision
+            slot = (slot + 1) % _Capacity;
+        }
+    }
+    
+    return false;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////////// KERNEL #2, FIND OCTTREE ROOTS ////////////////////////
+
+float _RootSize;
+
+[numthreads(64, 1, 1)]
+void Octtree_FindRoots(int id : SV_DispatchThreadID)
+{
+    if (id.x >= _SDFDataCount)
+        return;
+    
+    float rootNodeSize = _RootSize;
+    
+    SDFGPUData data = _SDFData[id.x];
+        
+    // if it's an intersection, subtraction, or operation, it doesnt contribute
+    if (data.Operation != 0)
+        return;
+    
+    int3 boundsMin = floor((data.MinBounds / rootNodeSize));
+    int3 boundsMax = floor((data.MaxBounds / rootNodeSize));
+    
+    for (int x = boundsMin.x; x <= boundsMax.x; x++)
+    {
+        for (int y = boundsMin.y; y <= boundsMax.y; y++)
+        {
+            for (int z = boundsMin.z; z <= boundsMax.z; z++)
+            {
+                TryAddRootNode(int3(x, y, z), rootNodeSize);
+            }
+        }
+    }
+    
+    InterlockedMax(NODE_COUNT_DIV_64, max(1, ceil(NODE_COUNT / 64.0)));
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////// KERNEL #3, SUBDIVIDE OCTTREE, FIND LEAF NODES //////////////////
+
+#define SQRT_3_OVER_2 0.866025403
+
+float _OcttreeNodePadding;
+
+[numthreads(64, 1, 1)]
+void Octtree_FindSurfaceNodes(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= NODE_COUNT)
+        return;
+
+    int consumeIndex;
+    InterlockedAdd(CONSUME_COUNT, -1, consumeIndex);
+    consumeIndex -= 1;
+    
+    if (consumeIndex < 0)
+        return;
+    
+    OcttreeNode current = _OcttreeNodeBuffer_Consume[consumeIndex];
+    InterlockedAdd(NODE_COUNT, -1);
+    
+    //float signedDistance = current.Distance;
+    //if (signedDistance >= NULL_DISTANCE)
+    //    signedDistance = Map(current.Position);
+    
+    float signedDistance = Map(current.Position);
+    
+    if (true/*abs(signedDistance) <= ((current.Width * SQRT_3_OVER_2) * _OcttreeNodePadding)*/)
+    {
+        // the isosurface is closer to the centre of the node than the
+        // corners of the node, so we split this node into 8 children for the next iteration
+        
+        float halfWidth = current.Width * 0.5;
+        float quarterWidth = current.Width * 0.25;
+        
+        [unroll(8)]
+        for (uint i = 0; i < 8; i++)
+        {
+            float3 position = current.Position + quarterWidth * unitCorners[i];
+            
+            OcttreeNode child;
+            child.Position = position;
+            child.Width = halfWidth;
+            child.Distance = Map(position);
+            //_OcttreeNodeBuffer_Append.Append(child);
+            
+            int appendIndex;
+            InterlockedAdd(APPEND_COUNT, 1, appendIndex);
+            _OcttreeNodeBuffer_Append[appendIndex] = child;
+        }
+        
+        InterlockedMax(NODE_COUNT, APPEND_COUNT);
+    }
+
+    // todo, is this correct, will the number of nodes always increase etc
+    InterlockedMax(NODE_COUNT_DIV_64, max(1, ceil(NODE_COUNT / 64.0)));
+}
+
+[numthreads(1, 1, 1)]
+void Octtree_SwapBufferCounts(uint3 id : SV_DispatchThreadID)
+{
+    int appendCount = APPEND_COUNT;
+    CONSUME_COUNT = appendCount;
+    APPEND_COUNT = 0;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////////////// KERNEL #4, TRIANGULATE MESH //////////////////////////
+
+StructuredBuffer<OcttreeNode> _OcttreeLeafNodes;
+RWStructuredBuffer<SurfacePoint> _SurfacePoints;
+RWStructuredBuffer<int> _ProceduralArgs;
+
+void AddSurfacePoint(int index, float3 position, int nodeID)
+{
+    SurfacePoint sp;
+    sp.Position = position;
+    sp.NodeID = nodeID;
+    sp.Normal = 0;
+
+    _SurfacePoints[index] = sp;
+}
+
+// now that we have a node for every surface point,
+// we generate up to 3 quads for each node and add it to the mesh.
+// (each quad is 2 triangles)
+
+void AddTriangles(float3 v_0, float3 v_1, float3 v_2, float3 v_3, float3 v_4, float3 v_5, int nodeID)
+{
+    int vertexIndex;
+    InterlockedAdd(VERTEX_COUNT, 6, vertexIndex);
+    InterlockedMax(_ProceduralArgs[0], VERTEX_COUNT);
+
+    int triangleIndex;
+    InterlockedAdd(TRIANGLE_COUNT, 2, triangleIndex);
+    
+    AddSurfacePoint(vertexIndex + 0, v_0, nodeID);
+    AddSurfacePoint(vertexIndex + 1, v_1, nodeID);
+    AddSurfacePoint(vertexIndex + 2, v_2, nodeID);
+    
+    AddSurfacePoint(vertexIndex + 3, v_3, nodeID);
+    AddSurfacePoint(vertexIndex + 4, v_4, nodeID);
+    AddSurfacePoint(vertexIndex + 5, v_5, nodeID);
+}
+
+// create a quad centred on a given point, defined by two basis vectors
+void AddPerpendicularQuad(float3 centre, float3 axis_1, float3 axis_2, float dist_1, float dist_2, int nodeID)
+{
+    // q_0 is always the centre of the node
+    
+    float3 q_0 = centre + axis_1 + axis_2;
+    float3 q_1 = centre + axis_1 - axis_2;
+    float3 q_2 = centre - axis_1 - axis_2;
+    float3 q_3 = centre - axis_1 + axis_2;
+    
+    // q3 --- q0    // clockwise winding order, mirrored if negative face
+    // |       |
+    // |       |
+    // q2 --- q1
+    
+    bool sign_a = dist_1 < 0; // whether the sign of the sdf on the side closer to the 'a' vertex is negative
+    bool sign_opposite = dist_2 < 0;
+            
+    bool isNegativeFace = !sign_a && sign_opposite;
+    
+    // split the quad along the shorter axis
+    if (dot2(q_0 - q_2) < dot2(q_3 - q_1))
+    {
+        if (isNegativeFace)
+            AddTriangles(q_0, q_3, q_2, q_2, q_1, q_0, nodeID);
+        else
+            AddTriangles(q_0, q_1, q_2, q_2, q_3, q_0, nodeID);
+    }
+    else
+    {
+        if (isNegativeFace)
+            AddTriangles(q_3, q_2, q_1, q_1, q_0, q_3, nodeID);
+        else
+            AddTriangles(q_3, q_0, q_1, q_1, q_2, q_3, nodeID);
+    }
+}
+
+[numthreads(64, 1, 1)]
+void Mesh_Triangulate(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= NODE_COUNT)
+        return;
+    
+    OcttreeNode node = _OcttreeLeafNodes[id.x];
+    float3 centre = node.Position;
+    float width = node.Width;
+    float halfWidth = width * 0.5;
+    
+    //      g-------h
+    //     /|      /|
+    //    / |     / |
+    //   c--|----d  |
+    //   |  e----|--f
+    //   | /     | /
+    //   a-------b
+    
+    // for each axis, imagine a line from the bottom left rear corner (A) of this node along that axis to opposite corner of the node (B, C, E)
+    // if the signs are different at each end of this line, then we must have crossed the isosurface and so we generate a quad
+    // perpendicular to this line
+    
+    float3 right = RIGHT * width;
+    float3 up = UP * width;
+    float3 forward = FORWARD * width;
+    
+    float3 a = centre - (ONE * halfWidth);
+    float3 b = a + right;
+    float3 c = a + up;
+    float3 e = a + forward;
+
+    float a_dist = Map(a);
+    float b_dist = Map(b);
+    float c_dist = Map(c);
+    float e_dist = Map(e);
+    
+    float3 halfUp = up * 0.5f;
+    float3 halfRight = right * 0.5f;
+    float3 halfForward = forward * 0.5f;
+    
+    // x axis surface intersection
+    if (sign(a_dist * b_dist) < 0.0)
+        AddPerpendicularQuad((a + b) * 0.5, halfForward, halfUp, a_dist, b_dist, id.x);
+    
+    // y axis surface intersection
+    if (sign(a_dist * c_dist) < 0.0)
+        AddPerpendicularQuad((a + c) * 0.5, halfRight, halfForward, a_dist, c_dist, id.x);
+        
+    // z axis surface intersection
+    if (sign(a_dist * e_dist) < 0.0)
+        AddPerpendicularQuad((a + e) * 0.5, halfUp, halfRight, a_dist, e_dist, id.x);
+    
+    // make sure 4th integer in counter is vertex count / 64, for use as an indirect args thread count
+    InterlockedMax(VERTEX_COUNT_DIV_64, ceil(VERTEX_COUNT / 64.0));
+    InterlockedMax(VERTEX_COUNT_DIV_3, VERTEX_COUNT / 3.0);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////////////////// KERNEL #5, APPLY QEF /////////////////////////////
+
+int _BinarySearchIterations;
+int _GradientDescentIterations;
+int _IsosurfaceExtractionType;
+float _VisualNormalSmoothing;
+RWStructuredBuffer<SDFMaterialGPU> _SurfacePointMaterials;
+
+bool TryGetEdgeSurfaceIntersection(float sample_from, float sample_to, float3 localPoint_from, float3 localPoint_to, float3 localOrigin, out float3 localIntersectionPoint)
+{
+    localIntersectionPoint = float3(0, 0, 0);
+    
+    if (sign(sample_to * sample_from) > 0)
+        return false;
+    
+    if (_BinarySearchIterations <= 0)
+    {
+        float t = sample_from / (sample_from - sample_to);
+        localIntersectionPoint = lerp(localPoint_from, localPoint_to, t);
+    }
+    else
+    {
+        localIntersectionPoint = (localPoint_from + localPoint_to) * 0.5;
+        
+        [fastopt]
+        for (int i = 0; i < _BinarySearchIterations; i++)
+        {
+            float sample_new = Map(localOrigin + localIntersectionPoint);
+            if (sign(sample_to * sample_new) > 0)  // new point is on same side as sample_to
+            {
+                sample_to = sample_new;
+                localPoint_to = localIntersectionPoint;
+            }
+            if (sign(sample_from * sample_new) > 0)  // new point is on same side as sample_from
+            {
+                sample_from = sample_new;
+                localPoint_from = localIntersectionPoint;
+            }
+            
+            localIntersectionPoint = (localPoint_from + localPoint_to) * 0.5;
+        }
+    }
+    
+    return true;
+}
+
+[numthreads(64, 1, 1)]
+void Mesh_ApplyQEF(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= VERTEX_COUNT)
+        return;
+    
+    SurfacePoint sp = _SurfacePoints[id.x];
+    OcttreeNode node = _OcttreeLeafNodes[sp.NodeID];
+    float3 origin = sp.Position;
+    float width = node.Width;
+    float halfWidth = width * 0.5;
+    float quarterWidth = halfWidth * 0.5;
+    
+    int edgeIntersectionCount = 0;
+    float3 averageEdgeIntersectionPoint = 0;
+    float3 localEdgeIntersectionPoints[12];
+    
+    //      g-------h
+    //     /|      /|
+    //    / |     / |
+    //   c--|----d  |
+    //   |  e----|--f
+    //   | /     | /
+    //   a-------b
+    
+    float3 corners[8] =
+    {
+        origin + unitCorners[A] * halfWidth, // A
+        origin + unitCorners[B] * halfWidth, // B
+        origin + unitCorners[C] * halfWidth, // C
+        origin + unitCorners[D] * halfWidth, // D
+        origin + unitCorners[E] * halfWidth, // E
+        origin + unitCorners[F] * halfWidth, // F
+        origin + unitCorners[G] * halfWidth, // G
+        origin + unitCorners[H] * halfWidth, // H
+    };
+    
+    float samples[8] =
+    {
+        Map(corners[A]),
+        Map(corners[B]),
+        Map(corners[C]),
+        Map(corners[D]),
+        Map(corners[E]),
+        Map(corners[F]),
+        Map(corners[G]),
+        Map(corners[H]),
+    };
+    
+    [fastopt]
+    for (int j = 0; j < 12; j++)
+    {
+        int from = edges[j][0];
+        int to = edges[j][1];
+        
+        float3 from_vertex_local = corners[from] - origin;
+        float3 to_vertex_local = corners[to] - origin;
+        
+        float sample_from = samples[from];
+        float sample_to = samples[to];
+
+        float3 localEdgeIntersectionPoint;
+        if (TryGetEdgeSurfaceIntersection(sample_from, sample_to, from_vertex_local, to_vertex_local, origin, localEdgeIntersectionPoint))
+        {
+            averageEdgeIntersectionPoint += localEdgeIntersectionPoint;
+            localEdgeIntersectionPoints[edgeIntersectionCount++] = localEdgeIntersectionPoint;
+        }
+    }
+        
+    // shouldn't happen
+    if (edgeIntersectionCount <= 0)
+        return;
+        
+    averageEdgeIntersectionPoint /= edgeIntersectionCount;
+    
+    float epsilon = width * 0.01;
+    float3 localEdgeIntersectionNormals[12];
+    
+    [fastopt] 
+    for (int k = 0; k < edgeIntersectionCount; k++)
+    {
+        localEdgeIntersectionNormals[k] = MapNormal(origin + localEdgeIntersectionPoints[k], epsilon);
+    }
+        
+    float3 surfacePoint;
+    
+    if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__SURFACENETS)
+    {
+        surfacePoint = origin + averageEdgeIntersectionPoint;
+    }
+    else /*if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING)*/
+    {
+        surfacePoint = origin + SolveQEF(edgeIntersectionCount, localEdgeIntersectionNormals, localEdgeIntersectionPoints, averageEdgeIntersectionPoint);
+    }
+    
+    for (int l = 0; l < _GradientDescentIterations; l++)
+    {
+        surfacePoint -= (MapNormal(surfacePoint, epsilon) * Map(surfacePoint));
+    }
+        
+    _SurfacePoints[id.x].Position = surfacePoint;
+    _SurfacePoints[id.x].Normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
+    
+    _SurfacePointMaterials[id.x] = MapColour(surfacePoint);
+    
+    InterlockedMax(_ProceduralArgs[0], VERTEX_COUNT);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+/////////////////////// KERNEL #6, FINALIZE MESH ////////////////////////////
+
+float _MaxAngleCosine; // if the dot product of the vertex normal and the triangle cross product is less than this, we need to generate a new vertex with a new normal. this gives better normals at sharp edges;
+
+[numthreads(64, 1, 1)]
+void Mesh_Finalize(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= VERTEX_COUNT_DIV_3)
+        return;
+    
+    int triStart = id.x * 3;    // surface points come in groups of 3, representing mesh triangles
+    
+    int index_a = triStart + 0;
+    int index_b = triStart + 1;
+    int index_c = triStart + 2;
+    
+    SurfacePoint a = _SurfacePoints[index_a];
+    SurfacePoint b = _SurfacePoints[index_b];
+    SurfacePoint c = _SurfacePoints[index_c];
+    
+    float3 v_a = a.Position;
+    float3 v_b = b.Position;
+    float3 v_c = c.Position;
+    
+    float3 n_a = a.Normal;
+    float3 n_b = b.Normal;
+    float3 n_c = c.Normal;
+    
+    float3 crossNormal = normalize(cross(v_b - v_a, v_c - v_a));
+
+    if (saturate(dot(n_a, crossNormal)) < _MaxAngleCosine)
+        _SurfacePoints[index_a].Normal = crossNormal;
+    
+    if (saturate(dot(n_b, crossNormal)) < _MaxAngleCosine)
+        _SurfacePoints[index_b].Normal = crossNormal;
+    
+    if (saturate(dot(n_c, crossNormal)) < _MaxAngleCosine)
+        _SurfacePoints[index_c].Normal = crossNormal;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////

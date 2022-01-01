@@ -1,0 +1,65 @@
+#pragma kernel MainKernel
+
+#define SQRT_3_OVER_2 0.866025403
+
+static float3 unitCorners[8] =
+{
+	float3(-1, -1, -1), // A
+    float3(1, -1, -1), // B
+    float3(-1, 1, -1), // C
+    float3(1, 1, -1), // D
+    float3(-1, -1, 1), // E
+    float3(1, -1, 1), // F
+    float3(-1, 1, 1), // G
+    float3(1, 1, 1), // H
+};
+
+struct Node
+{
+	int Level;
+	float3 Position;
+	float Width;
+};
+
+AppendStructuredBuffer<Node> _NodeBuffer_Append;
+ConsumeStructuredBuffer<Node> _NodeBuffer_Consume;
+RWStructuredBuffer<uint> _IndirectArgs;
+RWStructuredBuffer<uint> _NodeCount_Structured;
+
+float sdf_torus(float3 p, float2 t)
+{
+	float2 q = float2(length(p.xz) - t.x, p.y);
+	return length(q) - t.y;
+}
+
+[numthreads(64, 1, 1)]
+void MainKernel(uint3 id : SV_DispatchThreadID)
+{
+    if (_NodeCount_Structured[0] <= 0 || id.x >= _NodeCount_Structured[0])
+        return;
+
+	Node current = _NodeBuffer_Consume.Consume();
+    InterlockedAdd(_NodeCount_Structured[0], -1);
+    
+	float signedDistance = sdf_torus(current.Position, float2(2.0, 1.0));
+
+    if (abs(signedDistance) <= current.Width * SQRT_3_OVER_2)
+    {
+        // the isosurface is closer to the centre of the node than the
+        // corners of the node, so we split this node into 8 children for the next iteration
+        
+        [unroll(8)]
+		for (int i = 0; i < 8; i++)
+		{
+            Node child;
+			child.Level = current.Level + 1;
+			child.Position = current.Position + current.Width * 0.25 * unitCorners[i];
+			child.Width = current.Width * 0.5;
+			_NodeBuffer_Append.Append(child);
+		}
+        
+        InterlockedAdd(_NodeCount_Structured[0], 8);
+    }
+
+    InterlockedMax(_IndirectArgs[0], max(1, ceil(_NodeCount_Structured[0] / 64.0)));
+}

@@ -1,19 +1,9 @@
 ﻿#ifndef COMMON_STUFF_INCLUDED
 #define COMMON_STUFF_INCLUDED
 
+#include "./Definitions.hlsl"
+
 ////////////////////////////////////////////// GENERAL MATHS STUFF //////////////////////////////////////////////
-
-#ifndef UNITY_COMMON_INCLUDED
-#define PI 3.1415926
-#endif
-
-#define DEGREES_TO_RADIANS 0.0174533
-
-#define UP float3(0, 1, 0)
-#define RIGHT float3(1, 0, 0)
-#define FORWARD float3(0, 0, 1)
-
-#define IDENTITY_MATRIX float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 
 // returns square magnitude
 float dot2(float3 v)

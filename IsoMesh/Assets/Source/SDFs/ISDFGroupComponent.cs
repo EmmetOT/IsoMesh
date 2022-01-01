@@ -5,7 +5,7 @@ namespace IsoMesh
     public interface ISDFGroupComponent
     {
         void UpdateSettingsBuffer(ComputeBuffer computeBuffer);
-        void UpdateDataBuffer(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count);
+        void UpdateDataBuffers(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count);
         
         void Run();
 

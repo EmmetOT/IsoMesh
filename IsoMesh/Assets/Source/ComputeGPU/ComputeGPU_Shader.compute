@@ -1,0 +1,259 @@
+#ifndef COMPUTE_GPU
+#define COMPUTE_GPU
+
+uint _Capacity; // 128 * 1024 * 1024;
+
+
+#pragma kernel Wipe
+#pragma kernel Insert
+#pragma kernel TestLookupOne
+#pragma kernel TestRootNodes
+
+
+#define EMPTY (0xFFFFFFFF)
+#define NUM_KEYVALUES (_Capacity / 2)
+#define MAX_CHECKS (1024)
+#define INSERTION_COUNT (100)
+
+
+uint Hash(uint k);
+
+// a simple gpu hash map, see: https://nosferalatu.com/SimpleGPUHashTable.html
+// note: don't really need the values here? could probably just store keys
+
+struct KeyValue
+{
+    uint Key;
+    uint Value;
+};
+
+RWStructuredBuffer<KeyValue> _HashMap;
+StructuredBuffer<float3> _InsertionTest;
+StructuredBuffer<float3> _LookupAttempts;
+RWStructuredBuffer<int> _LookupResult;
+
+void Insert(uint key, uint value)
+{
+    uint slot = Hash(key);
+    uint checks = 0;
+    
+    while (checks < MAX_CHECKS)
+    {
+        uint prev;
+        InterlockedCompareExchange(_HashMap[slot].Key, EMPTY, key, prev);
+
+        if (prev == EMPTY || prev == key)
+        {
+            KeyValue kv = _HashMap[slot];
+            kv.Value = value;
+            _HashMap[slot] = kv;
+            
+            break;
+        }
+
+        slot = (slot + 1) & (_Capacity - 1);
+        
+        ++checks;
+    }
+}
+
+uint Lookup(uint key)
+{
+    uint slot = Hash(key);
+    uint checks = 0;
+
+    while (checks < MAX_CHECKS)
+    {
+        if (_HashMap[slot].Key == key)
+            return _HashMap[slot].Value;
+
+        if (_HashMap[slot].Key == EMPTY)
+            return EMPTY;
+
+        slot = (slot + 1) & (_Capacity - 1);
+        
+        ++checks;
+    }
+    
+    return EMPTY;
+}
+
+void Delete(uint key)
+{
+    uint slot = Hash(key);
+    uint checks = 0;
+
+    while (checks < MAX_CHECKS)
+    {
+        if (_HashMap[slot].Key == key)
+        {
+            KeyValue kv = _HashMap[slot];
+            kv.Value = EMPTY;
+            _HashMap[slot] = kv;
+            return;
+        }
+
+        if (_HashMap[slot].Key == EMPTY)
+            return;
+
+        slot = (slot + 1) & (_Capacity - 1);
+        
+        ++checks;
+    }
+}
+
+uint Hash(uint k)
+{
+    k ^= k >> 16;
+    k *= 0x85ebca6b;
+    k ^= k >> 13;
+    k *= 0xc2b2ae35;
+    k ^= k >> 16;
+    return k & (_Capacity - 1);
+}
+
+uint HashFloat3(float3 v)
+{
+    v = clamp(v + 1024, 0, 2047);
+    return uint(v.x * 1000) ^ (uint(v.y * 1000) << 2) ^ (uint(v.z * 1000) >> 2);
+}
+
+uint HashInt3(int3 v)
+{
+    v = clamp(v + 512, 0, 1023);
+    uint hash = 17;
+    hash = hash * 31 + Hash(v.x);
+    hash = hash * 31 + Hash(v.y);
+    hash = hash * 31 + Hash(v.z);
+    return hash;
+}
+
+[numthreads(64, 1, 1)]
+void Wipe(int id : SV_DispatchThreadID)
+{
+    if ((uint) id.x >= _Capacity)
+        return;
+    
+    KeyValue kv;
+    kv.Key = EMPTY;
+    kv.Value = EMPTY;
+    
+    _HashMap[id.x] = kv;
+}
+
+[numthreads(1, 1, 1)]
+void Insert(int id : SV_DispatchThreadID)
+{
+    if (id.x >= INSERTION_COUNT)
+        return;
+    
+    uint key = uint(HashFloat3(_InsertionTest[id.x]));
+    
+    Insert(key, key);
+}
+
+[numthreads(1, 1, 1)]
+void TestLookupOne(int id : SV_DispatchThreadID)
+{
+    if (id.x >= INSERTION_COUNT)
+        return;
+    
+    uint key = uint(HashFloat3(_LookupAttempts[id.x]));
+    uint value = Lookup(key);
+
+    if (value == EMPTY)
+    {
+        _LookupResult[id.x] = 0;
+    }
+    else
+    {
+        _LookupResult[id.x] = 1;
+    }
+}
+
+struct TestBounds
+{
+    float3 Centre;
+    float3 Size;
+    uint Key;
+    
+    float3 Min()
+    {
+        return Centre - (Size * 0.5);
+    }
+    
+    float3 Max()
+    {
+        return Centre + (Size * 0.5);
+    }
+};
+
+StructuredBuffer<TestBounds> _TestBoundsInput;
+AppendStructuredBuffer<TestBounds> _TestBoundsOutput;
+RWStructuredBuffer<int> _TestBoundsCount;
+
+float _RootSize;
+
+bool TryAddRootNode(int3 coords)
+{
+    uint key = HashInt3(coords);
+    uint slot = key % _Capacity;
+                
+    int i = 0;
+    while (i++ < MAX_CHECKS)
+    {
+        uint prev = EMPTY;
+        InterlockedCompareExchange(_HashMap[slot].Key, EMPTY, key, prev);
+        if (prev == EMPTY)
+        {
+            TestBounds root;
+            root.Centre = (float3(coords) + 0.5) * _RootSize;
+            root.Size = _RootSize;
+            root.Key = key;
+            
+            _TestBoundsOutput.Append(root);
+            InterlockedAdd(_TestBoundsCount[0], 1);
+            return true;
+        }
+
+        if (key == _HashMap[slot].Key)
+        {
+            InterlockedAdd(_TestBoundsCount[1], 1);
+            return false;
+        }
+        else
+        {
+            // collision
+            slot = (slot + 1) % _Capacity;
+        }
+    }
+    
+    return false;
+}
+
+[numthreads(64, 1, 1)]
+void TestRootNodes(int id : SV_DispatchThreadID)
+{
+    if (id.x >= 2)
+        return;
+    
+    float rootNodeSize = _RootSize;
+    
+    TestBounds bounds = _TestBoundsInput[id.x];
+    
+    int3 boundsMin = floor((bounds.Min() / rootNodeSize));
+    int3 boundsMax = floor((bounds.Max() / rootNodeSize));
+    
+    for (int x = boundsMin.x; x <= boundsMax.x; x++)
+    {
+        for (int y = boundsMin.y; y <= boundsMax.y; y++)
+        {
+            for (int z = boundsMin.z; z <= boundsMax.z; z++)
+            {
+                TryAddRootNode(int3(x, y, z));
+            }
+        }
+    }
+}
+
+#endif // COMPUTE_GPU

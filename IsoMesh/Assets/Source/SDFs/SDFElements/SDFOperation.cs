@@ -8,7 +8,7 @@ using UnityEditor;
 
 namespace IsoMesh
 {
-    public class SDFOperation : SDFObject
+    public class SDFOperation : SDFElement
     {
         //[SerializeField]
         //private SDFOperationType m_type;
@@ -22,14 +22,26 @@ namespace IsoMesh
         {
             base.TryDeregister();
 
-            Group?.Deregister(this);
+            if (Group)
+                Group.Deregister(this);
         }
 
         protected override void TryRegister()
         {
             base.TryDeregister();
 
-            Group?.Register(this);
+            if (Group)
+                Group.Register(this);
+        }
+
+        /// <summary>
+        /// <see cref="SDFOperation"/>s don't have bounding boxes themselves, but they can modify
+        /// other bounds.
+        /// </summary>
+        public Bounds ModifyAABB(Bounds aabb)
+        {
+            // todo
+            return aabb;
         }
 
         public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
@@ -64,7 +76,7 @@ namespace IsoMesh
             child.transform.SetParent(selection.transform);
             child.transform.Reset();
 
-            SDFOperation newPrimitive = child.AddComponent<SDFOperation>();
+            //SDFOperation newPrimitive = child.AddComponent<SDFOperation>();
             //newPrimitive.m_type = type;
 
             Selection.activeGameObject = child;

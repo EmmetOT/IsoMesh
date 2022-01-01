@@ -7,7 +7,7 @@ using UnityEngine;
 namespace IsoMesh
 {
     [ExecuteInEditMode]
-    public abstract class SDFObject : MonoBehaviour
+    public abstract class SDFElement : MonoBehaviour
     {
         protected const float MIN_SMOOTHING = 0.000000001f;
 
@@ -94,7 +94,12 @@ namespace IsoMesh
             }
 
             transform.hasChanged = false;
+
+            if (m_isDirty || m_isOrderDirty)
+                OnDirty();
         }
+
+        protected virtual void OnDirty() { }
     }
 
 

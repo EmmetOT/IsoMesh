@@ -296,6 +296,15 @@ public static class Utils
     public static Vector4 Saturate(this Vector4 input) => PiecewiseOp(input, Mathf.Clamp01);
     public static Vector4 Max0(this Vector4 input) => input.Max(0f);
 
+    public static Vector2 Min(Vector2 a, Vector2 b) => new Vector2(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y));
+    public static Vector2 Max(Vector2 a, Vector2 b) => new Vector2(Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+
+    public static Vector3 Min(Vector3 a, Vector3 b) => new Vector3(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y), Mathf.Min(a.z, b.z));
+    public static Vector3 Max(Vector3 a, Vector3 b) => new Vector3(Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y), Mathf.Max(a.z, b.z));
+
+    public static Vector4 Min(Vector4 a, Vector4 b) => new Vector4(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y), Mathf.Min(a.z, b.z), Mathf.Min(a.w, b.w));
+    public static Vector4 Max(Vector4 a, Vector4 b) => new Vector4(Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y), Mathf.Max(a.z, b.z), Mathf.Min(a.w, b.w));
+
     public static Vector2 Max(this Vector2 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
     public static Vector3 Max(this Vector3 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
     public static Vector4 Max(this Vector4 input, float max) => PiecewiseOp(input, (float f) => Mathf.Max(f, max));
@@ -1570,6 +1579,8 @@ public static class Utils
     #endregion
 
     #region Physics
+
+    public static float GetLongAxis(this Bounds bounds) => Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
 
     /// <summary>
     /// Given a vector, a layer mask, and optionally, a direction (defaults to down), raycast in that direction on

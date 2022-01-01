@@ -17,11 +17,34 @@ namespace IsoMesh
         private SDFMeshAsset m_asset;
         public SDFMeshAsset Asset => m_asset;
 
-        [SerializeField]
-        protected SDFCombineType m_operation;
+        public override IEnumerable<Vector3> Corners
+        {
+            get
+            {
+                if (!m_asset)
+                    yield break;
 
-        [SerializeField]
-        protected bool m_flip = false;
+                Vector3 minBounds = m_asset.MinBounds - Vector3.one * m_asset.Padding;
+                Vector3 maxBounds = m_asset.MaxBounds - Vector3.one * m_asset.Padding;
+
+                yield return new Vector3(minBounds.x, minBounds.y, minBounds.z);
+                yield return new Vector3(maxBounds.x, minBounds.y, minBounds.z);
+                yield return new Vector3(minBounds.x, maxBounds.y, minBounds.z);
+                yield return new Vector3(maxBounds.x, maxBounds.y, minBounds.z);
+                yield return new Vector3(minBounds.x, minBounds.y, maxBounds.z);
+                yield return new Vector3(maxBounds.x, minBounds.y, maxBounds.z);
+                yield return new Vector3(minBounds.x, maxBounds.y, maxBounds.z);
+                yield return new Vector3(maxBounds.x, maxBounds.y, maxBounds.z);
+            }
+        }
+
+        public override Bounds CalculateBounds()
+        {
+            if (!m_asset)
+                return new Bounds(transform.position, Vector3.zero);
+
+            return base.CalculateBounds();
+        }
 
         protected override void TryRegister()
         {
@@ -30,7 +53,8 @@ namespace IsoMesh
 
             base.TryRegister();
 
-            Group?.Register(this);
+            if (Group)
+                Group.Register(this);
         }
 
         protected override void TryDeregister()
@@ -40,7 +64,8 @@ namespace IsoMesh
 
             base.TryRegister();
 
-            Group?.Deregister(this);
+            if (Group)
+                Group.Deregister(this);
         }
 
         protected override void OnValidate()
@@ -60,24 +85,11 @@ namespace IsoMesh
                 Transform = transform.worldToLocalMatrix,
                 CombineType = (int)m_operation,
                 Flip = m_flip ? -1 : 1,
-                MinBounds = m_asset.MinBounds,
-                MaxBounds = m_asset.MaxBounds,
+                MinBounds = AABB.min,
+                MaxBounds = AABB.max,
                 Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing)
             };
         }
-
-#if UNITY_EDITOR
-        private void OnDrawGizmosSelected()
-        {
-            if (!m_asset)
-                return;
-
-            Handles.color = Color.white;
-            Handles.matrix = transform.localToWorldMatrix;
-            Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
-            Handles.DrawWireCube((m_asset.MaxBounds + m_asset.MinBounds) * 0.5f, (m_asset.MaxBounds - m_asset.MinBounds));
-        }
-#endif
 
         #region Create Menu Items
 

@@ -3,6 +3,8 @@ using UnityEngine;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using UnityEngine.Rendering;
+using System.Collections.Generic;
+using System.Linq;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -16,15 +18,28 @@ namespace IsoMesh
     /// or transfered to the CPU and sent to a MeshFilter in 'Mesh' mode.
     /// </summary>
     [ExecuteInEditMode]
-    public class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
+    public partial class SDFGroupMeshGenerator : MonoBehaviour, ISDFGroupComponent
     {
         #region Fields and Properties
 
+        private const int OCTTREE_HASHMAP_CAPACITY = 32768 * 4;
+        private const int MAX_OCTTREE_LEAF_NODES = 1000000;
+
         private static class Properties
         {
+            public static readonly int OcttreeNodeBuffer_AppendBuffer = Shader.PropertyToID("_OcttreeNodeBuffer_Append");
+            public static readonly int OcttreeNodeBuffer_ConsumeBuffer = Shader.PropertyToID("_OcttreeNodeBuffer_Consume");
+            public static readonly int OcttreeIndirectArgs = Shader.PropertyToID("_OcttreeIndirectArgs");
+            //public static readonly int OcttreeNodeCount_StructuredBuffer = Shader.PropertyToID("_OcttreeNodeCount_Structured");
+            public static readonly int OcttreeNodePadding_Float = Shader.PropertyToID("_OcttreeNodePadding");
+            public static readonly int OcttreeRootNodeSize_Float = Shader.PropertyToID("_RootSize");
+            public static readonly int OcttreeDepth_Int = Shader.PropertyToID("_OcttreeDepth");
+            public static readonly int OcttreeRootHashMap_StructuredBuffer = Shader.PropertyToID("_OcttreeRootHashMap");
+            public static readonly int HashMapCapacity_Int = Shader.PropertyToID("_Capacity");
+
             public static readonly int PointsPerSide_Int = Shader.PropertyToID("_PointsPerSide");
             public static readonly int CellSize_Float = Shader.PropertyToID("_CellSize");
-            
+
             public static readonly int BinarySearchIterations_Int = Shader.PropertyToID("_BinarySearchIterations");
             public static readonly int IsosurfaceExtractionType_Int = Shader.PropertyToID("_IsosurfaceExtractionType");
             public static readonly int MaxAngleCosine_Float = Shader.PropertyToID("_MaxAngleCosine");
@@ -61,28 +76,40 @@ namespace IsoMesh
 
         private struct Kernels
         {
-            public const string MapKernelName = "Isosurface_Map";
-            private const string GenerateVertices_KernelName = "Isosurface_GenerateVertices";
-            private const string NumberVerticesKernelName = "Isosurface_NumberVertices";
-            private const string GenerateTrianglesKernelName = "Isosurface_GenerateTriangles";
-            public const string BuildIndexBufferKernelName = "Isosurface_BuildIndexBuffer";
-            private const string AddIntermediateVerticesToIndexBufferKernelName = "Isosurface_AddIntermediateVerticesToIndexBuffer";
+            public const string Octtree_AllocateEmptyNodeHashMap_Name = "Octtree_AllocateEmptyNodeHashMap";
+            public const string Octtree_FindRoots_Name = "Octtree_FindRoots";
+            public const string Octtree_FindSurfaceNodes_Name = "Octtree_FindSurfaceNodes";
 
-            public int Map { get; }
-            public int GenerateVertices { get; }
-            public int NumberVertices { get; }
-            public int GenerateTriangles { get; }
-            public int BuildIndexBuffer { get; }
-            public int AddIntermediateVerticesToIndexBuffer { get; }
+            public const string Isosurface_Map_Name = "Isosurface_Map";
+            private const string Isosurface_GenerateVertices_Name = "Isosurface_GenerateVertices";
+            private const string Isosurface_NumberVertices_Name = "Isosurface_NumberVertices";
+            private const string Isosurface_GenerateTriangles_Name = "Isosurface_GenerateTriangles";
+            public const string Isosurface_BuildIndexBuffer_Name = "Isosurface_BuildIndexBuffer";
+            private const string Isosurface_AddIntermediateVerticesToIndexBuffer_Name = "Isosurface_AddIntermediateVerticesToIndexBuffer";
+
+            public int Octtree_AllocateEmptyNodeHashMap { get; }
+            public int Octtree_FindRoots { get; }
+            public int Octtree_FindSurfaceNodes { get; }
+
+            public int Isosurface_Map { get; }
+            public int Isosurface_GenerateVertices { get; }
+            public int Isosurface_NumberVertices { get; }
+            public int Isosurface_GenerateTriangles { get; }
+            public int Isosurface_BuildIndexBuffer { get; }
+            public int Isosurface_AddIntermediateVerticesToIndexBuffer { get; }
 
             public Kernels(ComputeShader shader)
             {
-                Map = shader.FindKernel(MapKernelName);
-                GenerateVertices = shader.FindKernel(GenerateVertices_KernelName);
-                NumberVertices = shader.FindKernel(NumberVerticesKernelName);
-                GenerateTriangles = shader.FindKernel(GenerateTrianglesKernelName);
-                BuildIndexBuffer = shader.FindKernel(BuildIndexBufferKernelName);
-                AddIntermediateVerticesToIndexBuffer = shader.FindKernel(AddIntermediateVerticesToIndexBufferKernelName);
+                Octtree_AllocateEmptyNodeHashMap = shader.FindKernel(Octtree_AllocateEmptyNodeHashMap_Name);
+                Octtree_FindRoots = shader.FindKernel(Octtree_FindRoots_Name);
+                Octtree_FindSurfaceNodes = shader.FindKernel(Octtree_FindSurfaceNodes_Name);
+
+                Isosurface_Map = shader.FindKernel(Isosurface_Map_Name);
+                Isosurface_GenerateVertices = shader.FindKernel(Isosurface_GenerateVertices_Name);
+                Isosurface_NumberVertices = shader.FindKernel(Isosurface_NumberVertices_Name);
+                Isosurface_GenerateTriangles = shader.FindKernel(Isosurface_GenerateTriangles_Name);
+                Isosurface_BuildIndexBuffer = shader.FindKernel(Isosurface_BuildIndexBuffer_Name);
+                Isosurface_AddIntermediateVerticesToIndexBuffer = shader.FindKernel(Isosurface_AddIntermediateVerticesToIndexBuffer_Name);
             }
         }
 
@@ -93,6 +120,10 @@ namespace IsoMesh
         private NativeArray<int> m_outputCounterNativeArray;
         private readonly int[] m_proceduralArgsArray = new int[] { 0, 1, 0, 0, 0 };
 
+        private readonly int[] m_octtreeIndirectArgsData = new int[] { 1, 1, 1, 0, 0 }; // indirect args, and then current node count, and then root node collisions
+        //private readonly uint[] m_octtreeNodeCountData = new uint[] { 0, 0 }; // [current node count, root node collisions]
+        //private readonly OcttreeNode[] m_octtreeRootNodeData = new OcttreeNode[1];
+
         private const int VERTEX_COUNTER = 0;
         private const int TRIANGLE_COUNTER = 3;
         private const int VERTEX_COUNTER_DIV_64 = 6;
@@ -101,6 +132,12 @@ namespace IsoMesh
         private const int INTERMEDIATE_VERTEX_COUNTER_DIV_64 = 15;
 
         private const string ComputeShaderResourceName = "Compute_IsoSurfaceExtraction";
+
+        private ComputeBuffer m_octtreeIndirectArgsBuffer;
+        //private ComputeBuffer m_octtreeNodeCountBuffer;
+        private ComputeBuffer m_octtreeNodeAppendBufferOne;
+        private ComputeBuffer m_octtreeNodeAppendBufferTwo;
+        private ComputeBuffer m_octtreeRootHashMap;
 
         private ComputeBuffer m_samplesBuffer;
         private ComputeBuffer m_cellDataBuffer;
@@ -238,6 +275,8 @@ namespace IsoMesh
         private AlgorithmSettings m_algorithmSettings = new AlgorithmSettings();
         public AlgorithmSettings AlgorithmSettings => m_algorithmSettings;
 
+        private bool m_isInitializing = false;
+
         private bool m_initialized = false;
 
         [SerializeField]
@@ -245,6 +284,8 @@ namespace IsoMesh
         public bool ShowGrid => m_showGrid;
 
         private bool m_isEnabled = false;
+
+        private bool m_isCoroutineRunning = false;
 
         #endregion
 
@@ -396,7 +437,7 @@ namespace IsoMesh
 
                 AsyncGPUReadback.WaitAllRequests();
 
-                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals/*, m_nativeArrayUVs*/,m_nativeArrayColours, m_nativeArrayTriangles, vertexCount, triangleCount);
+                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals/*, m_nativeArrayUVs*/, m_nativeArrayColours, m_nativeArrayTriangles, vertexCount, triangleCount);
             }
             else
             {
@@ -407,8 +448,6 @@ namespace IsoMesh
                     MeshCollider.enabled = false;
             }
         }
-
-        private bool m_isCoroutineRunning = false;
 
         /// <summary>
         /// This is the asynchronous version of <see cref="GetMeshDataFromGPU"/>. Use it as a coroutine. It uses a member variable to prevent duplicates from running at the same time.
@@ -537,8 +576,6 @@ namespace IsoMesh
 
         #region Internal Compute Shader Stuff + Other Boring Boilerplate Methods
 
-        private bool m_isInitializing = false;
-
         /// <summary>
         /// Do all the initial setup. This function should only be called once per 'session' because it does a lot of
         /// setup for buffers of constant size.
@@ -549,32 +586,47 @@ namespace IsoMesh
                 return;
 
             ReleaseUnmanagedMemory();
-            
+
             m_isInitializing = true;
             m_initialized = true;
 
             m_computeShaderInstance = Instantiate(ComputeShader);
 
             SendTransformToGPU();
-            
+
             m_kernels = new Kernels(ComputeShader);
+
+            m_computeShaderInstance.SetInt(Properties.HashMapCapacity_Int, OCTTREE_HASHMAP_CAPACITY);
+
+            m_octtreeRootHashMap = new ComputeBuffer(OCTTREE_HASHMAP_CAPACITY, KeyValue.Stride, ComputeBufferType.Structured);
+            m_octtreeIndirectArgsBuffer = new ComputeBuffer(m_octtreeIndirectArgsData.Length, sizeof(int), ComputeBufferType.IndirectArguments);
+            //m_octtreeNodeCountBuffer = new ComputeBuffer(m_octtreeNodeCountData.Length, sizeof(uint));
 
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
             m_counterBuffer = new ComputeBuffer(m_counterArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
             m_proceduralArgsBuffer = new ComputeBuffer(m_proceduralArgsArray.Length, sizeof(int), ComputeBufferType.IndirectArguments);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.NumberVertices, Properties.Counter_RWBuffer, m_counterBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.Counter_RWBuffer, m_counterBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateVertices, Properties.Counter_RWBuffer, m_counterBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.NumberVertices, Properties.Counter_RWBuffer, m_counterBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.Counter_RWBuffer, m_counterBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_AllocateEmptyNodeHashMap, Properties.OcttreeRootHashMap_StructuredBuffer, m_octtreeRootHashMap);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindRoots, Properties.OcttreeRootHashMap_StructuredBuffer, m_octtreeRootHashMap);
+            //m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindRoots, Properties.OcttreeNodeCount_StructuredBuffer, m_octtreeNodeCountBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindRoots, Properties.OcttreeIndirectArgs, m_octtreeIndirectArgsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindSurfaceNodes, Properties.OcttreeIndirectArgs, m_octtreeIndirectArgsBuffer);
+            //m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindSurfaceNodes, Properties.OcttreeNodeCount_StructuredBuffer, m_octtreeNodeCountBuffer);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.ProceduralArgs_RWBuffer, m_proceduralArgsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_NumberVertices, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateVertices, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_NumberVertices, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_BuildIndexBuffer, Properties.Counter_RWBuffer, m_counterBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.Counter_RWBuffer, m_counterBuffer);
+
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.ProceduralArgs_RWBuffer, m_proceduralArgsBuffer);
 
             CreateVariableBuffers();
 
             // ensuring all these setting variables are sent to the gpu.
+            OnOcttreeMaxNodeDepthChanged();
+            //OnOcttreeRootWidthChanged();
             OnCellSizeChanged();
             OnBinarySearchIterationsChanged();
             OnIsosurfaceExtractionTypeChanged();
@@ -601,6 +653,9 @@ namespace IsoMesh
             if (m_triangles.IsNullOrEmpty() || m_triangles.Length != countCubed)
                 m_triangles = new TriangleData[countCubed];
 
+            m_octtreeNodeAppendBufferOne?.Dispose();
+            m_octtreeNodeAppendBufferTwo?.Dispose();
+
             m_samplesBuffer?.Dispose();
             m_cellDataBuffer?.Dispose();
             m_vertexDataBuffer?.Dispose();
@@ -613,6 +668,11 @@ namespace IsoMesh
             m_meshVertexMaterialsBuffer?.Dispose();
 
             m_intermediateVertexBuffer?.Dispose();
+
+            //int maxOcttreeNodes = GetMaxPossibleOcttreeNodes(m_voxelSettings.OcttreeMaxNodeDepth);
+            //Debug.Log("Max octree nodes = " + maxOcttreeNodes);
+            m_octtreeNodeAppendBufferOne = new ComputeBuffer(MAX_OCTTREE_LEAF_NODES, OcttreeNode.Stride, ComputeBufferType.Append);
+            m_octtreeNodeAppendBufferTwo = new ComputeBuffer(MAX_OCTTREE_LEAF_NODES, OcttreeNode.Stride, ComputeBufferType.Append);
 
             m_samplesBuffer = new ComputeBuffer(countCubed, sizeof(float), ComputeBufferType.Structured);
             m_cellDataBuffer = new ComputeBuffer(countCubed, CellData.Stride, ComputeBufferType.Structured);
@@ -641,25 +701,27 @@ namespace IsoMesh
 
             UpdateMapKernels(Properties.Samples_RWBuffer, m_samplesBuffer);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateVertices, Properties.CellData_RWBuffer, m_cellDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.NumberVertices, Properties.CellData_RWBuffer, m_cellDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.CellData_RWBuffer, m_cellDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindRoots, Properties.OcttreeNodeBuffer_AppendBuffer, m_octtreeNodeAppendBufferTwo);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateVertices, Properties.CellData_RWBuffer, m_cellDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_NumberVertices, Properties.CellData_RWBuffer, m_cellDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.CellData_RWBuffer, m_cellDataBuffer);
+
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
             //m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.IntermediateVertexBuffer_AppendBuffer, m_intermediateVertexBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_BuildIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_BuildIndexBuffer, Properties.IntermediateVertexBuffer_AppendBuffer, m_intermediateVertexBuffer);
 
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
             //m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.IntermediateVertexBuffer_StructuredBuffer, m_intermediateVertexBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, Properties.IntermediateVertexBuffer_StructuredBuffer, m_intermediateVertexBuffer);
 
             m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
@@ -675,6 +737,12 @@ namespace IsoMesh
         {
             StopAllCoroutines();
             m_isCoroutineRunning = false;
+
+            m_octtreeIndirectArgsBuffer?.Dispose();
+            //m_octtreeNodeCountBuffer?.Dispose();
+            m_octtreeNodeAppendBufferOne?.Dispose();
+            m_octtreeNodeAppendBufferTwo?.Dispose();
+            m_octtreeRootHashMap?.Dispose();
 
             m_counterBuffer?.Dispose();
             m_proceduralArgsBuffer?.Dispose();
@@ -733,9 +801,11 @@ namespace IsoMesh
                 return;
             }
 
-            m_computeShaderInstance.SetBuffer(m_kernels.Map, id, buffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateVertices, id, buffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, id, buffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindRoots, id, buffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindSurfaceNodes, id, buffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_Map, id, buffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateVertices, id, buffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, id, buffer);
         }
 
         /// <summary>
@@ -744,10 +814,10 @@ namespace IsoMesh
         private void SetVertexData()
         {
             m_vertexDataBuffer.SetData(m_vertices);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateVertices, Properties.VertexData_AppendBuffer, m_vertexDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.NumberVertices, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateVertices, Properties.VertexData_AppendBuffer, m_vertexDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_NumberVertices, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_BuildIndexBuffer, Properties.VertexData_StructuredBuffer, m_vertexDataBuffer);
         }
 
         /// <summary>
@@ -756,8 +826,8 @@ namespace IsoMesh
         private void SetTriangleData()
         {
             m_triangleDataBuffer.SetData(m_triangles);
-            m_computeShaderInstance.SetBuffer(m_kernels.GenerateTriangles, Properties.TriangleData_AppendBuffer, m_triangleDataBuffer);
-            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.TriangleData_StructuredBuffer, m_triangleDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_GenerateTriangles, Properties.TriangleData_AppendBuffer, m_triangleDataBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.Isosurface_BuildIndexBuffer, Properties.TriangleData_StructuredBuffer, m_triangleDataBuffer);
         }
 
         public void Run()
@@ -774,7 +844,7 @@ namespace IsoMesh
                 UpdateMesh();
             }
         }
-        
+
         /// <summary>
         /// Dispatch all the compute kernels in the correct order. Basically... do the thing.
         /// </summary>
@@ -785,6 +855,11 @@ namespace IsoMesh
                 return;
 
             ResetCounters();
+
+            UpdateMapKernels(Properties.Settings_StructuredBuffer, Group.SettingsBuffer);
+
+            DispatchFindRootNodes();
+            DebugFindSurfaceNodes();
 
             DispatchMap();
             DispatchGenerateVertices();
@@ -799,7 +874,13 @@ namespace IsoMesh
         /// </summary>
         private void ResetCounters()
         {
-            m_counterBuffer.SetData(m_counterArray);
+            m_octtreeIndirectArgsBuffer.SetData(m_octtreeIndirectArgsData);
+
+            m_counterBuffer?.SetData(m_counterArray);
+            m_proceduralArgsBuffer?.SetData(m_proceduralArgsArray);
+
+            m_octtreeNodeAppendBufferOne?.SetCounterValue(0);
+            m_octtreeNodeAppendBufferTwo?.SetCounterValue(0);
 
             m_vertexDataBuffer?.SetCounterValue(0);
             m_triangleDataBuffer?.SetCounterValue(0);
@@ -809,46 +890,122 @@ namespace IsoMesh
             m_meshTrianglesBuffer?.SetCounterValue(0);
 
             m_intermediateVertexBuffer?.SetCounterValue(0);
+        }
 
-            m_proceduralArgsBuffer?.SetData(m_proceduralArgsArray);
+        //private void OnDrawGizmos()
+        //{
+        //    if (m_debugRootNodes.IsNullOrEmpty())
+        //        return;
+
+        //    Handles.color = Color.black;
+        //    for (int i = 0; i < m_debugRootNodes.Length; i++)
+        //        Handles.DrawWireCube(m_debugRootNodes[i].Position, Vector3.one * m_debugRootNodes[i].Width);
+
+        //    if (m_debugLeafNodes.IsNullOrEmpty())
+        //        return;
+
+        //    Handles.color = Color.white;
+        //    for (int i = 0; i < m_debugLeafNodes.Length; i++)
+        //        Handles.DrawWireCube(m_debugLeafNodes[i].Position, Vector3.one * m_debugLeafNodes[i].Width);
+        //}
+
+        private OcttreeNode[] m_debugRootNodes;
+        private OcttreeNode[] m_debugLeafNodes;
+
+
+        private void DispatchFindRootNodes()
+        {
+            // completely wipe the buffer
+            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Octtree_AllocateEmptyNodeHashMap, out uint x, out _, out _);
+            m_computeShaderInstance.Dispatch(m_kernels.Octtree_AllocateEmptyNodeHashMap, Mathf.CeilToInt(OCTTREE_HASHMAP_CAPACITY / (float)x), 1, 1);
+
+            // data is ready, attempt to find the overlapping grid cells
+            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Octtree_FindRoots, out x, out _, out _);
+            m_computeShaderInstance.Dispatch(m_kernels.Octtree_FindRoots, Mathf.CeilToInt(m_group.SDFElementsCount / (float)x), 1, 1);
+
+            int[] countData = new int[m_octtreeIndirectArgsData.Length];
+            m_octtreeIndirectArgsBuffer.GetData(countData);
+
+            m_debugRootNodes = new OcttreeNode[countData[3]];
+            m_octtreeNodeAppendBufferTwo.GetData(m_debugRootNodes);
+        }
+
+        private ComputeBuffer DispatchFindSurfaceNodes()
+        {
+            ComputeBuffer bufferAppend = m_octtreeNodeAppendBufferOne;
+            ComputeBuffer bufferConsume = m_octtreeNodeAppendBufferTwo;
+
+            bufferAppend.SetCounterValue(0);
+
+            //OcttreeNode[] m_octtreeRootNodeData = new OcttreeNode[1];
+            //bufferConsume.SetData(m_octtreeRootNodeData);
+            //bufferConsume.SetCounterValue(1);
+
+            //m_computeShaderInstance.SetBuffer(m_kernels.FindSurfaceNodes, Properties.OcttreeNodeCount_StructuredBuffer, m_octtreeNodeCountBuffer);
+            //m_computeShaderInstance.SetBuffer(m_kernels.FindSurfaceNodes, Properties.OcttreeIndirectArgs, m_octtreeIndirectArgsBuffer);
+
+            // this kernel is dispatched a number of times, with the nodes getting smaller by a factor of 8 every time
+            for (int i = 0; i < m_voxelSettings.OcttreeMaxNodeDepth; i++)
+            {
+                bufferAppend.SetCounterValue(0);
+
+                // maybe i need to also set the data to an empty array here?
+
+                m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindSurfaceNodes, Properties.OcttreeNodeBuffer_AppendBuffer, bufferAppend);
+                m_computeShaderInstance.SetBuffer(m_kernels.Octtree_FindSurfaceNodes, Properties.OcttreeNodeBuffer_ConsumeBuffer, bufferConsume);
+                m_computeShaderInstance.DispatchIndirect(m_kernels.Octtree_FindSurfaceNodes, m_octtreeIndirectArgsBuffer);
+
+                // switcheroo ;)
+                (bufferAppend, bufferConsume) = (bufferConsume, bufferAppend);
+            }
+
+            return bufferConsume;
+        }
+
+        public void DebugFindSurfaceNodes()
+        {
+            ComputeBuffer buffer = DispatchFindSurfaceNodes();
+
+            int[] countData = new int[m_octtreeIndirectArgsData.Length];
+            m_octtreeIndirectArgsBuffer.GetData(countData);
+            m_debugLeafNodes = new OcttreeNode[countData[3]];
+            buffer.GetData(m_debugLeafNodes);
         }
 
         private void DispatchMap()
         {
-            UpdateMapKernels(Properties.Settings_StructuredBuffer, Group.SettingsBuffer);
-
-            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Map, out uint x, out uint y, out uint z);
-            m_computeShaderInstance.Dispatch(m_kernels.Map, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
+            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Isosurface_Map, out uint x, out uint y, out uint z);
+            m_computeShaderInstance.Dispatch(m_kernels.Isosurface_Map, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
         }
 
         private void DispatchGenerateVertices()
         {
-            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.GenerateVertices, out uint x, out uint y, out uint z);
-            m_computeShaderInstance.Dispatch(m_kernels.GenerateVertices, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
+            m_computeShaderInstance.GetKernelThreadGroupSizes(m_kernels.Isosurface_GenerateVertices, out uint x, out uint y, out uint z);
+            m_computeShaderInstance.Dispatch(m_kernels.Isosurface_GenerateVertices, Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)x), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)y), Mathf.CeilToInt(m_voxelSettings.SamplesPerSide / (float)z));
         }
 
         private void DispatchNumberVertices()
         {
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-            m_computeShaderInstance.DispatchIndirect(m_kernels.NumberVertices, m_counterBuffer, VERTEX_COUNTER_DIV_64 * sizeof(int));
+            m_computeShaderInstance.DispatchIndirect(m_kernels.Isosurface_NumberVertices, m_counterBuffer, VERTEX_COUNTER_DIV_64 * sizeof(int));
         }
 
         private void DispatchGenerateTriangles()
         {
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-            m_computeShaderInstance.DispatchIndirect(m_kernels.GenerateTriangles, m_counterBuffer, VERTEX_COUNTER_DIV_64 * sizeof(int));
+            m_computeShaderInstance.DispatchIndirect(m_kernels.Isosurface_GenerateTriangles, m_counterBuffer, VERTEX_COUNTER_DIV_64 * sizeof(int));
         }
 
         private void DispatchBuildIndexBuffer()
         {
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-            m_computeShaderInstance.DispatchIndirect(m_kernels.BuildIndexBuffer, m_counterBuffer, TRIANGLE_COUNTER_DIV_64 * sizeof(int));
+            m_computeShaderInstance.DispatchIndirect(m_kernels.Isosurface_BuildIndexBuffer, m_counterBuffer, TRIANGLE_COUNTER_DIV_64 * sizeof(int));
         }
 
         private void DispatchAddIntermediateVerticesToIndexBuffer()
         {
             // counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-            m_computeShaderInstance.DispatchIndirect(m_kernels.AddIntermediateVerticesToIndexBuffer, m_counterBuffer, INTERMEDIATE_VERTEX_COUNTER_DIV_64 * sizeof(int));
+            m_computeShaderInstance.DispatchIndirect(m_kernels.Isosurface_AddIntermediateVerticesToIndexBuffer, m_counterBuffer, INTERMEDIATE_VERTEX_COUNTER_DIV_64 * sizeof(int));
         }
 
         private void SendTransformToGPU()
@@ -871,6 +1028,8 @@ namespace IsoMesh
 
             OnCellCountChanged();
             OnCellSizeChanged();
+            OnOcttreeMaxNodeDepthChanged();
+            OnOctreeNodePaddingChanged();
 
             m_isInitializing = false;
 
@@ -895,7 +1054,7 @@ namespace IsoMesh
         {
             m_isInitializing = true;
             m_algorithmSettings.CopySettings(algorithmSettings);
-            
+
             OnVisualNormalSmoothingChanged();
             OnMaxAngleToleranceChanged();
             OnGradientDescentIterationsChanged();
@@ -909,7 +1068,33 @@ namespace IsoMesh
                 UpdateMesh();
         }
 
-        public void OnCellCountChanged()
+        private void UpdateValue(int nameID, float val)
+        {
+            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
+
+            if (!m_initialized || !m_isEnabled)
+                return;
+
+            m_computeShaderInstance.SetFloat(nameID, val);
+
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
+                UpdateMesh();
+        }
+
+        private void UpdateValue(int nameID, int val)
+        {
+            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
+
+            if (!m_initialized || !m_isEnabled)
+                return;
+
+            m_computeShaderInstance.SetInt(nameID, val);
+
+            if (m_mainSettings.AutoUpdate && !m_isInitializing)
+                UpdateMesh();
+        }
+
+        private void UpdateBuffers()
         {
             m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
@@ -922,74 +1107,32 @@ namespace IsoMesh
                 UpdateMesh();
         }
 
+        public void OnOctreeNodePaddingChanged() => UpdateValue(Properties.OcttreeNodePadding_Float, m_voxelSettings.OcttreeNodePadding);
+
+        public void OnOcttreeMaxNodeDepthChanged()
+        {
+            UpdateValue(Properties.OcttreeDepth_Int, m_voxelSettings.OcttreeMaxNodeDepth);
+            UpdateValue(Properties.OcttreeRootNodeSize_Float, m_voxelSettings.OcttreeRootNodeSize);
+        }
+
+        public void OnCellCountChanged() => UpdateBuffers();
+
         public void OnCellSizeChanged()
         {
-            m_bounds = new Bounds { extents = m_voxelSettings.Extents };
-
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetFloat(Properties.CellSize_Float, m_voxelSettings.CellSize);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-        
-        public void OnVisualNormalSmoothingChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetFloat(Properties.VisualNormalSmoothing, m_algorithmSettings.VisualNormalSmoothing);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
+            UpdateValue(Properties.CellSize_Float, m_voxelSettings.CellSize);
+            UpdateValue(Properties.OcttreeRootNodeSize_Float, m_voxelSettings.OcttreeRootNodeSize);
         }
 
-        public void OnMaxAngleToleranceChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
+        public void OnVisualNormalSmoothingChanged() => UpdateValue(Properties.VisualNormalSmoothing, m_algorithmSettings.VisualNormalSmoothing);
 
-            m_computeShaderInstance.SetFloat(Properties.MaxAngleCosine_Float, Mathf.Cos(m_algorithmSettings.MaxAngleTolerance * Mathf.Deg2Rad));
+        public void OnMaxAngleToleranceChanged() => UpdateValue(Properties.MaxAngleCosine_Float, Mathf.Cos(m_algorithmSettings.MaxAngleTolerance * Mathf.Deg2Rad));
 
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
+        public void OnGradientDescentIterationsChanged() => UpdateValue(Properties.GradientDescentIterations_Int, m_algorithmSettings.GradientDescentIterations);
 
-        public void OnGradientDescentIterationsChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-            
-            m_computeShaderInstance.SetInt(Properties.GradientDescentIterations_Int, m_algorithmSettings.GradientDescentIterations);
+        public void OnBinarySearchIterationsChanged() => UpdateValue(Properties.BinarySearchIterations_Int, m_algorithmSettings.BinarySearchIterations);
 
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
+        public void OnIsosurfaceExtractionTypeChanged() => UpdateValue(Properties.IsosurfaceExtractionType_Int, (int)m_algorithmSettings.IsosurfaceExtractionType);
 
-        public void OnBinarySearchIterationsChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetInt(Properties.BinarySearchIterations_Int, m_algorithmSettings.BinarySearchIterations);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-
-        public void OnIsosurfaceExtractionTypeChanged()
-        {
-            if (!m_initialized || !m_isEnabled)
-                return;
-
-            m_computeShaderInstance.SetInt(Properties.IsosurfaceExtractionType_Int, (int)m_algorithmSettings.IsosurfaceExtractionType);
-
-            if (m_mainSettings.AutoUpdate && !m_isInitializing)
-                UpdateMesh();
-        }
-        
         public void OnOutputModeChanged()
         {
             if (TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
@@ -1019,7 +1162,7 @@ namespace IsoMesh
 
         #region SDF Group Methods
 
-        public void UpdateDataBuffer(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count)
+        public void UpdateDataBuffers(ComputeBuffer computeBuffer, ComputeBuffer materialBuffer, int count)
         {
             if (!m_isEnabled)
                 return;
@@ -1071,6 +1214,22 @@ namespace IsoMesh
 
         #region Grid Helper Functions
 
+        private int GetMaxPossibleOcttreeNodes(int levels)
+        {
+            long power = 1;
+
+            for (int i = 0; i < levels; i++)
+                power *= 8;
+
+            if (power > MAX_OCTTREE_LEAF_NODES)
+                return MAX_OCTTREE_LEAF_NODES;
+
+            if (power > int.MaxValue)
+                return int.MaxValue;
+
+            return (int)power;
+        }
+
         public Vector3 CellCoordinateToVertex(int x, int y, int z)
         {
             float gridSize = (float)(m_voxelSettings.SamplesPerSide - 1f);
@@ -1114,12 +1273,6 @@ namespace IsoMesh
 
         #region Chunk + Editor Methods
 
-        [SerializeField]
-        private bool m_settingsControlledByGrid = false;
-
-        public void SetSettingsControlledByGrid(bool settingsControlledByGrid) =>
-            m_settingsControlledByGrid = settingsControlledByGrid;
-
         public static void CloneSettings(SDFGroupMeshGenerator target, Transform parent, SDFGroup group, MainSettings mainSettings, AlgorithmSettings algorithmSettings, VoxelSettings voxelSettings, bool addMeshRenderer = false, bool addMeshCollider = false, Material meshRendererMaterial = null)
         {
             target.TryGetOrCreateMeshGameObject(out GameObject meshGameObject);
@@ -1144,70 +1297,9 @@ namespace IsoMesh
         }
 
         #endregion
-
-        #region Structs
-
-        [StructLayout(LayoutKind.Sequential)]
-        [System.Serializable]
-        public struct CellData
-        {
-            public static int Stride => sizeof(int) + sizeof(float) * 3;
-
-            public int VertexID;
-            public Vector3 SurfacePoint;
-
-            public bool HasSurfacePoint => VertexID >= 0;
-
-            public override string ToString() => $"HasSurfacePoint = {HasSurfacePoint}" + (HasSurfacePoint ? $", SurfacePoint = {SurfacePoint}, VertexID = {VertexID}" : "");
-        };
-
-        [StructLayout(LayoutKind.Sequential)]
-        [System.Serializable]
-        public struct VertexData
-        {
-            public static int Stride => sizeof(int) * 2 + sizeof(float) * 6;
-
-            public int Index;
-            public int CellID;
-            public Vector3 Vertex;
-            public Vector3 Normal;
-
-            public override string ToString() => $"Index = {Index}, CellID = {CellID}, Vertex = {Vertex}, Normal = {Normal}";
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        [System.Serializable]
-        public struct TriangleData
-        {
-            public static int Stride => sizeof(int) * 3;
-
-            public int P_1;
-            public int P_2;
-            public int P_3;
-
-            public override string ToString() => $"P_1 = {P_1}, P_2 = {P_2}, P_3 = {P_3}";
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        [System.Serializable]
-        public struct NewVertexData
-        {
-            public static int Stride => sizeof(int) + sizeof(float) * 6;
-
-            public int Index;
-            public Vector3 Vertex;
-            public Vector3 Normal;
-
-            public override string ToString() => $"Index = {Index}, Vertex = {Vertex}, Normal = {Normal}";
-        }
-
-        #endregion
-
     }
 
-    public enum IsosurfaceExtractionType { SurfaceNets, DualContouring };
+    public enum IsosurfaceExtractionType { SurfaceNets, DualContouring, Voxels };
     public enum EdgeIntersectionType { Interpolation, BinarySearch };
-
-    public enum CellSizeMode { Fixed, Density };
     public enum OutputMode { MeshFilter, Procedural };
 }

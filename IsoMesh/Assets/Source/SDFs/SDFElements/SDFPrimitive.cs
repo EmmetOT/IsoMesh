@@ -19,36 +19,56 @@ namespace IsoMesh
         [SerializeField]
         private Vector4 m_data = new Vector4(1f, 1f, 1f, 0f);
 
-        [SerializeField]
-        protected SDFCombineType m_operation;
-        public SDFCombineType Operation => m_operation;
+        private static IEnumerable<Vector3> EnumerateCorners(float x, float y, float z)
+        {
+            yield return new Vector3(-x, -y, -z);
+            yield return new Vector3(x, -y, -z);
+            yield return new Vector3(-x, y, -z);
+            yield return new Vector3(x, y, -z);
+            yield return new Vector3(-x, -y, z);
+            yield return new Vector3(x, -y, z);
+            yield return new Vector3(-x, y, z);
+            yield return new Vector3(x, y, z);
+        }
 
-        [SerializeField]
-        protected bool m_flip = false;
+        private IEnumerable<Vector3> UntransformedCubeBoundsCorners => EnumerateCorners(m_data.x + m_data.w, m_data.y + m_data.w, m_data.z + m_data.w);
+        private IEnumerable<Vector3> UntransformedBoxFrameBoundsCorners => EnumerateCorners(m_data.x, m_data.y, m_data.z);
+        private IEnumerable<Vector3> UntransformedTorusBoundsCorners => EnumerateCorners(m_data.x + m_data.y, m_data.y, m_data.x + m_data.y);
+        private IEnumerable<Vector3> UntransformedCylinderBoundsCorners => EnumerateCorners(m_data.x, m_data.y, m_data.x);
+        private IEnumerable<Vector3> UntransformedSphereBoundsCorners => EnumerateCorners(m_data.x, m_data.x, m_data.x);
+
+        public override IEnumerable<Vector3> Corners => m_type switch
+        {
+            SDFPrimitiveType.Torus => UntransformedTorusBoundsCorners,
+            SDFPrimitiveType.Cuboid => UntransformedCubeBoundsCorners,
+            SDFPrimitiveType.BoxFrame => UntransformedBoxFrameBoundsCorners,
+            SDFPrimitiveType.Cylinder => UntransformedCylinderBoundsCorners,
+            _ => UntransformedSphereBoundsCorners,
+        };
+
+        public override Bounds CalculateBounds()
+        {
+            // small optimization since the bounds calc for spheres is so simple
+            if (m_type == SDFPrimitiveType.Sphere)
+                return new Bounds(transform.position, (Vector3.one * m_data.x * 2f));
+
+            return base.CalculateBounds();
+        }
 
         protected override void TryDeregister()
         {
             base.TryDeregister();
 
-            Group?.Deregister(this);
+            if (Group)
+                Group.Deregister(this);
         }
 
         protected override void TryRegister()
         {
             base.TryDeregister();
 
-            Group?.Register(this);
-        }
-
-        public Vector3 CubeBounds
-        {
-            get
-            {
-                if (m_type == SDFPrimitiveType.BoxFrame || m_type == SDFPrimitiveType.Cuboid)
-                    return new Vector3(m_data.x, m_data.y, m_data.z);
-
-                return Vector3.zero;
-            }
+            if (Group)
+                Group.Register(this);
         }
 
         public float SphereRadius
@@ -62,15 +82,6 @@ namespace IsoMesh
             }
         }
 
-        public void SetCubeBounds(Vector3 vec)
-        {
-            if (m_type == SDFPrimitiveType.BoxFrame || m_type == SDFPrimitiveType.Cuboid)
-            {
-                m_data = new Vector4(vec.x, vec.y, vec.z, m_data.w);
-                SetDirty();
-            }
-        }
-
         public void SetSphereRadius(float radius)
         {
             if (m_type == SDFPrimitiveType.Sphere)
@@ -80,9 +91,9 @@ namespace IsoMesh
             }
         }
 
+        // note: has room for six more floats (minbounds, maxbounds)
         public override SDFGPUData GetSDFGPUData(int sampleStartIndex = -1, int uvStartIndex = -1)
         {
-            // note: has room for six more floats (minbounds, maxbounds)
             return new SDFGPUData
             {
                 Type = (int)m_type + 1,
@@ -90,33 +101,11 @@ namespace IsoMesh
                 Transform = transform.worldToLocalMatrix,
                 CombineType = (int)m_operation,
                 Flip = m_flip ? -1 : 1,
-                Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing)
+                Smoothing = Mathf.Max(MIN_SMOOTHING, m_smoothing),
+                MinBounds = AABB.min,
+                MaxBounds = AABB.max
             };
         }
-
-#if UNITY_EDITOR
-        private void OnDrawGizmos()
-        {
-            Color col = Operation == SDFCombineType.SmoothSubtract ? Color.red : Color.blue;
-            Handles.color = col;
-            Handles.matrix = transform.localToWorldMatrix;
-
-            switch (Type)
-            {
-                case SDFPrimitiveType.BoxFrame:
-                case SDFPrimitiveType.Cuboid:
-                    Handles.DrawWireCube(Vector3.zero, m_data.XYZ() * 2f);
-                    break;
-                //case SDFPrimitiveType.BoxFrame:
-                //    Handles.DrawWireCube(Vector3.zero, data.XYZ() * 2f);
-                //    break;
-                default:
-                    Handles.DrawWireDisc(Vector3.zero, Vector3.up, m_data.x);
-                    break;
-            }
-        }
-
-#endif
 
         #region Create Menu Items
 
@@ -161,7 +150,7 @@ namespace IsoMesh
         Sphere,
         Torus,
         Cuboid,
-        BoxFrame, 
+        BoxFrame,
         Cylinder
     }
 }

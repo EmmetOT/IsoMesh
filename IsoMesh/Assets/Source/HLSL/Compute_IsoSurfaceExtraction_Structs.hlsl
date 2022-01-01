@@ -1,6 +1,13 @@
 #ifndef SURFACE_NET_STRUCTS
 #define SURFACE_NET_STRUCTS
 
+struct SurfacePoint
+{
+    float3 Position;
+    float3 Normal;
+    int NodeID;
+};
+
 struct CellData
 {
     int VertexID;
@@ -76,6 +83,13 @@ struct SDFGPUData
     {
         return (int) Data.z;
     }
+};
+
+struct OcttreeNode
+{
+	float3 Position;
+	float Width;
+    float Distance;
 };
 
 struct SDFMaterialGPU

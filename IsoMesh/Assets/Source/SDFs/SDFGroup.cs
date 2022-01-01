@@ -27,6 +27,8 @@ namespace IsoMesh
 
         public const float MIN_SMOOTHING = 0.00001f;
 
+        public event System.Action OnGroupUpdate;
+
         /// <summary>
         /// Whether this group is actively updating.
         /// </summary>
@@ -62,14 +64,32 @@ namespace IsoMesh
         private List<ISDFGroupComponent> m_sdfComponents = new List<ISDFGroupComponent>();
 
         private ComputeBuffer m_dataBuffer;
+        public ComputeBuffer DataBuffer => m_dataBuffer;
+
         private ComputeBuffer m_materialBuffer;
+        public ComputeBuffer MaterialBuffer => m_materialBuffer;
 
         private ComputeBuffer m_settingsBuffer;
         public ComputeBuffer SettingsBuffer => m_settingsBuffer;
 
         private Settings[] m_settingsArray = new Settings[1];
 
-        private List<SDFObject> m_sdfObjects = new List<SDFObject>();
+        private List<SDFElement> m_sdfElements = new List<SDFElement>();
+        public bool IsEmpty => m_sdfElements.IsNullOrEmpty();
+        public int SDFElementsCount => m_data.IsNullOrEmpty() ? 0 : m_data.Count;
+        
+        /// <summary>
+        /// Enumerate all the <see cref="SDFObject"/>s which belong to this group.
+        /// </summary>
+        public IEnumerable<SDFObject> SDFObjects
+        {
+            get
+            {
+                for (int i = 0; i < m_sdfElements.Count; i++)
+                    if (m_sdfElements[i] is SDFObject obj)
+                        yield return obj;
+            }
+        }
 
         private static readonly List<SDFMesh> m_globalSDFMeshes = new List<SDFMesh>();
         private static readonly Dictionary<int, int> m_meshSdfSampleStartIndices = new Dictionary<int, int>();
@@ -84,8 +104,6 @@ namespace IsoMesh
         private List<SDFGPUData> m_data = new List<SDFGPUData>();
         private List<SDFMaterialGPU> m_materials = new List<SDFMaterialGPU>();
         private readonly List<int> m_dataSiblingIndices = new List<int>();
-
-        public bool IsEmpty => m_sdfObjects.IsNullOrEmpty();
 
         // dirty flags. we only need one for the primitives, but two for the meshes. this is because
         // i want to avoid doing a 'full update' of the meshes unless i really need to.
@@ -103,12 +121,12 @@ namespace IsoMesh
 
         #region Registration
 
-        public void Register(SDFObject sdfObject)
+        public void Register(SDFElement element)
         {
-            if (m_sdfObjects.Contains(sdfObject))
+            if (m_sdfElements.Contains(element))
                 return;
 
-            if (sdfObject is SDFMesh sdfMesh)
+            if (element is SDFMesh sdfMesh)
             {
                 // check if this is a totally new mesh that no group has seen
                 if (!m_globalSDFMeshes.Contains(sdfMesh))
@@ -126,12 +144,12 @@ namespace IsoMesh
 
             bool wasEmpty = IsEmpty;
 
-            m_sdfObjects.Add(sdfObject);
+            m_sdfElements.Add(element);
             m_isLocalDataDirty = true;
             m_isLocalDataOrderDirty = true;
 
             // this is almost certainly overkill, but i like the kind of guaranteed stability
-            ClearNulls(m_sdfObjects);
+            ClearNulls(m_sdfElements);
 
             if (wasEmpty && !IsEmpty)
                 for (int i = 0; i < m_sdfComponents.Count; i++)
@@ -140,14 +158,14 @@ namespace IsoMesh
             RequestUpdate();
         }
 
-        public void Deregister(SDFObject sdfObject)
+        public void Deregister(SDFElement element)
         {
             bool wasEmpty = IsEmpty;
 
-            if (!m_sdfObjects.Remove(sdfObject))
+            if (!m_sdfElements.Remove(element))
                 return;
 
-            if (sdfObject is SDFMesh sdfMesh)
+            if (element is SDFMesh sdfMesh)
             {
                 // if this was the only group referencing this sdfmesh, we can remove it from the global buffer too
                 if (m_meshCounts.ContainsKey(sdfMesh.ID))
@@ -163,7 +181,7 @@ namespace IsoMesh
             m_isLocalDataOrderDirty = true;
 
             // this is almost certainly overkill
-            ClearNulls(m_sdfObjects);
+            ClearNulls(m_sdfElements);
 
             if (!wasEmpty && IsEmpty)
                 for (int i = 0; i < m_sdfComponents.Count; i++)
@@ -172,7 +190,7 @@ namespace IsoMesh
             RequestUpdate();
         }
 
-        public bool IsRegistered(SDFObject sdfObject) => !m_sdfObjects.IsNullOrEmpty() && m_sdfObjects.Contains(sdfObject);
+        public bool IsRegistered(SDFElement sdfObject) => !m_sdfElements.IsNullOrEmpty() && m_sdfElements.Contains(sdfObject);
 
         #endregion
 
@@ -239,22 +257,22 @@ namespace IsoMesh
                 RequestUpdate();
 
             bool nullHit = false;
-            for (int i = 0; i < m_sdfObjects.Count; i++)
+            for (int i = 0; i < m_sdfElements.Count; i++)
             {
-                SDFObject sdfObject = m_sdfObjects[i];
-                bool isNull = !sdfObject;
+                SDFElement sdfElement = m_sdfElements[i];
+                bool isNull = !sdfElement;
 
                 nullHit |= isNull;
 
                 if (!isNull)
                 {
-                    m_isLocalDataDirty |= sdfObject.IsDirty;
-                    m_isLocalDataOrderDirty |= sdfObject.IsOrderDirty;
+                    m_isLocalDataDirty |= sdfElement.IsDirty;
+                    m_isLocalDataOrderDirty |= sdfElement.IsOrderDirty;
                 }
             }
 
             if (nullHit)
-                ClearNulls(m_sdfObjects);
+                ClearNulls(m_sdfElements);
 
             bool changed = false;
 
@@ -324,7 +342,7 @@ namespace IsoMesh
         /// </summary>
         /// <param name="locals">List of SDFMesh objects to ensure are in the global list.</param>
         /// <param name="onlySendBufferOnChange">Whether to invoke the components and inform them the buffer has changed. This is only really necessary when the size changes.</param>
-        private static bool RebuildGlobalMeshData(IList<SDFObject> locals, bool onlySendBufferOnChange = true)
+        private static bool RebuildGlobalMeshData(IList<SDFElement> locals, bool onlySendBufferOnChange = true)
         {
             int previousMeshSamplesCount = m_meshSamples.Count;
             int previousMeshUVsCount = m_meshPackedUVs.Count;
@@ -407,15 +425,15 @@ namespace IsoMesh
         {
             m_dataSiblingIndices.Clear();
 
-            ClearNulls(m_sdfObjects);
+            ClearNulls(m_sdfElements);
 
-            for (int i = 0; i < m_sdfObjects.Count; i++)
+            for (int i = 0; i < m_sdfElements.Count; i++)
             {
-                m_dataSiblingIndices.Add(m_sdfObjects[i].transform.GetSiblingIndex());
-                m_sdfObjects[i].SetOrderClean();
+                m_dataSiblingIndices.Add(m_sdfElements[i].transform.GetSiblingIndex());
+                m_sdfElements[i].SetOrderClean();
             }
 
-            m_sdfObjects = m_sdfObjects.OrderBy(d => m_dataSiblingIndices[m_sdfObjects.IndexOf(d)]).ToList();
+            m_sdfElements = m_sdfElements.OrderBy(d => m_dataSiblingIndices[m_sdfElements.IndexOf(d)]).ToList();
 
             m_isLocalDataOrderDirty = false;
         }
@@ -431,7 +449,7 @@ namespace IsoMesh
             // should we rebuild the buffers which contain mesh sample + uv data?
             bool globalBuffersChanged = false;
             if (m_meshSamplesBuffer == null || !m_meshSamplesBuffer.IsValid() || m_meshPackedUVsBuffer == null || !m_meshPackedUVsBuffer.IsValid() || m_isGlobalMeshDataDirty)
-                globalBuffersChanged = RebuildGlobalMeshData(m_sdfObjects, onlySendBufferOnChange);
+                globalBuffersChanged = RebuildGlobalMeshData(m_sdfElements, onlySendBufferOnChange);
 
             // memorize the size of the array before clearing it, for later comparison
             int previousCount = m_data.Count;
@@ -439,9 +457,9 @@ namespace IsoMesh
             m_materials.Clear();
 
             // add all the sdf objects
-            for (int i = 0; i < m_sdfObjects.Count; i++)
+            for (int i = 0; i < m_sdfElements.Count; i++)
             {
-                SDFObject sdfObject = m_sdfObjects[i];
+                SDFElement sdfObject = m_sdfElements[i];
 
                 if (!sdfObject)
                     continue;
@@ -455,7 +473,7 @@ namespace IsoMesh
                 {
                     // get the index in the global samples buffer where this particular mesh's samples begin
                     if (!m_meshSdfSampleStartIndices.TryGetValue(mesh.ID, out meshStartIndex))
-                        globalBuffersChanged = RebuildGlobalMeshData(m_sdfObjects, onlySendBufferOnChange); // we don't recognize this mesh so we may need to rebuild the entire global list of mesh samples and UVs
+                        globalBuffersChanged = RebuildGlobalMeshData(m_sdfElements, onlySendBufferOnChange); // we don't recognize this mesh so we may need to rebuild the entire global list of mesh samples and UVs
 
                     // likewise, if this mesh has UVs, get the index where they begin too
                     if (mesh.Asset.HasUVs)
@@ -490,7 +508,7 @@ namespace IsoMesh
             if (sendBuffer)
             {
                 for (int i = 0; i < m_sdfComponents.Count; i++)
-                    m_sdfComponents[i].UpdateDataBuffer(m_dataBuffer, m_materialBuffer, m_data.Count);
+                    m_sdfComponents[i].UpdateDataBuffers(m_dataBuffer, m_materialBuffer, m_data.Count);
             }
 
             if (m_data.Count > 0)
@@ -509,6 +527,8 @@ namespace IsoMesh
 
                 Mapper.SetMeshData(m_meshSamples, m_meshPackedUVs);
             }
+
+            OnGroupUpdate?.Invoke();
         }
 
         #endregion
@@ -597,36 +617,36 @@ namespace IsoMesh
 
         //public bool OverlapBox(Vector3 centre, Vector3 halfExtents, bool surfaceOnly = true) => OverlapBox(centre, halfExtents, Quaternion.identity, surfaceOnly);
 
-        public bool OverlapBox(Vector3 centre, Vector3 halfExtents)
-        {
-            if (!OverlapSphere(centre, halfExtents.magnitude))
-                return false;
+        //public bool OverlapBox(Vector3 centre, Vector3 halfExtents)
+        //{
+        //    if (!OverlapSphere(centre, halfExtents.magnitude))
+        //        return false;
 
-            Vector3 maxBounds = centre + halfExtents;
-            Vector3 minBounds = centre - halfExtents;
+        //    Vector3 maxBounds = centre + halfExtents;
+        //    Vector3 minBounds = centre - halfExtents;
 
-            bool Check(Vector3 p)
-            {
-                Vector3 surfaceP = GetNearestPointOnSurface(p, out float signedDistance);
+        //    bool Check(Vector3 p)
+        //    {
+        //        Vector3 surfaceP = GetNearestPointOnSurface(p, out float signedDistance);
 
-                bool isInside =
-                    surfaceP.x >= minBounds.x && surfaceP.x <= maxBounds.x &&
-                    surfaceP.y >= minBounds.y && surfaceP.y <= maxBounds.y &&
-                    surfaceP.z >= minBounds.z && surfaceP.z <= maxBounds.z;
+        //        bool isInside =
+        //            surfaceP.x >= minBounds.x && surfaceP.x <= maxBounds.x &&
+        //            surfaceP.y >= minBounds.y && surfaceP.y <= maxBounds.y &&
+        //            surfaceP.z >= minBounds.z && surfaceP.z <= maxBounds.z;
 
-                return isInside;
-            }
+        //        return isInside;
+        //    }
 
-            return (Check(centre) ||
-                Check(centre + halfExtents) ||
-                Check(centre - halfExtents) ||
-                Check(centre + new Vector3(halfExtents.x, halfExtents.y, -halfExtents.z)) ||
-                Check(centre + new Vector3(halfExtents.x, -halfExtents.y, halfExtents.z)) ||
-                Check(centre + new Vector3(halfExtents.x, -halfExtents.y, -halfExtents.z)) ||
-                Check(centre + new Vector3(-halfExtents.x, halfExtents.y, halfExtents.z)) ||
-                Check(centre + new Vector3(-halfExtents.x, halfExtents.y, -halfExtents.z)) ||
-                Check(centre + new Vector3(-halfExtents.x, -halfExtents.y, halfExtents.z)));
-        }
+        //    return (Check(centre) ||
+        //        Check(centre + halfExtents) ||
+        //        Check(centre - halfExtents) ||
+        //        Check(centre + new Vector3(halfExtents.x, halfExtents.y, -halfExtents.z)) ||
+        //        Check(centre + new Vector3(halfExtents.x, -halfExtents.y, halfExtents.z)) ||
+        //        Check(centre + new Vector3(halfExtents.x, -halfExtents.y, -halfExtents.z)) ||
+        //        Check(centre + new Vector3(-halfExtents.x, halfExtents.y, halfExtents.z)) ||
+        //        Check(centre + new Vector3(-halfExtents.x, halfExtents.y, -halfExtents.z)) ||
+        //        Check(centre + new Vector3(-halfExtents.x, -halfExtents.y, halfExtents.z)));
+        //}
 
         /// <summary>
         /// Raycast the sdf group. This is done via raymarching on the CPU side.

@@ -1,14 +1,20 @@
-﻿#pragma kernel Isosurface_Map
+﻿#pragma kernel Octtree_AllocateEmptyNodeHashMap
+#pragma kernel Octtree_FindRoots
+#pragma kernel Octtree_FindSurfaceNodes
+
+#pragma kernel Isosurface_Map
 #pragma kernel Isosurface_GenerateVertices
 #pragma kernel Isosurface_NumberVertices
 #pragma kernel Isosurface_GenerateTriangles
 #pragma kernel Isosurface_BuildIndexBuffer
 #pragma kernel Isosurface_AddIntermediateVerticesToIndexBuffer
 
+#include "../Definitions.hlsl"
 #include "../Common.hlsl"
 #include "../QEFFunctions.cginc"
 #include "../Compute_IsoSurfaceExtraction_Structs.hlsl"
 #include "../MapSignedDistanceField.hlsl"
+#include "../OcttreeRootHashMap.hlsl"
 
 #define A_COORD x, y, z
 #define B_COORD x + 1, y, z
@@ -27,17 +33,6 @@
 #define F 5
 #define G 6
 #define H 7
-
-#define ISOSURFACE_EXTRACTION_TYPE__SURFACENETS 0
-#define ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING 1
-
-// counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
-#define VERTEX_COUNT _Counter[0]
-#define TRIANGLE_COUNT _Counter[3]
-#define VERTEX_COUNT_DIV_64 _Counter[6]
-#define TRIANGLE_COUNT_DIV_64 _Counter[9]
-#define INTERMEDIATE_VERTEX_COUNT _Counter[12]
-#define INTERMEDIATE_VERTEX_COUNT_DIV_64 _Counter[15]
 
 static int edges[12][2] =
 {
@@ -58,15 +53,26 @@ static int edges[12][2] =
 
 static float3 unitCorners[8] =
 {
-    float3(-1.0f, -1.0f, -1.0f),    // A
-    float3(1.0f, -1.0f, -1.0f),     // B
-    float3(-1.0f, 1.0f, -1.0f),     // C
-    float3(1.0f, 1.0f, -1.0f),      // D
-    float3(-1.0f, -1.0f, 1.0f),     // E
-    float3(1.0f, -1.0f, 1.0f),      // F
-    float3(-1.0f, 1.0f, 1.0f),      // G
-    float3(1.0f, 1.0f, 1.0f),       // H
+    float3(-1, -1, -1), // A
+    float3(1, -1, -1), // B
+    float3(-1, 1, -1), // C
+    float3(1, 1, -1), // D
+    float3(-1, -1, 1), // E
+    float3(1, -1, 1), // F
+    float3(-1, 1, 1), // G
+    float3(1, 1, 1), // H
 };
+
+#define ISOSURFACE_EXTRACTION_TYPE__SURFACENETS 0
+#define ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING 1
+
+// counter buffer has 18 integers: [vertex count, 1, 1, triangle count, 1, 1, vertex count / 64, 1, 1, triangle count / 64, 1, 1, intermediate vertex count, 1, 1, intermediate vertex count / 64, 1, 1]
+#define VERTEX_COUNT _Counter[0]
+#define TRIANGLE_COUNT _Counter[3]
+#define VERTEX_COUNT_DIV_64 _Counter[6]
+#define TRIANGLE_COUNT_DIV_64 _Counter[9]
+#define INTERMEDIATE_VERTEX_COUNT _Counter[12]
+#define INTERMEDIATE_VERTEX_COUNT_DIV_64 _Counter[15]
 
 float _NudgeVerticesToAverageNormalScalar; // how much to give vertices an extra push in the direction of the average normal of their cells edge intersections. combined with gradient descent, this can give better edges
 float _NudgeMaxMagnitude; // how much to give vertices an extra push in the direction of the average normal of their cells edge intersections. combined with gradient descent, this can give better edges
@@ -82,7 +88,6 @@ float4x4 _GroupTransform;
 uint _PointsPerSide; // the amount of cells width, height, and depth. grid is always a cube
 float _CellSize; // the width/height/depth of every individual cell. again, always a cube
 
-RWStructuredBuffer<float> _Samples;
 RWStructuredBuffer<int> _Counter;
 RWStructuredBuffer<int> _BuildMeshIndirectArgs;
 
@@ -123,6 +128,181 @@ int CellCoordinateToIndex(int x, int y, int z)
     return (x + y * _PointsPerSide + z * _PointsPerSide * _PointsPerSide);
 }
 
+/////////////////////////////////////////////////////////////////////////////
+
+////////////////// KERNEL #-1, CREATE HASHMAP ////////////////////////
+
+[numthreads(64, 1, 1)]
+void Octtree_AllocateEmptyNodeHashMap(int id : SV_DispatchThreadID)
+{
+    if ((uint) id.x >= _Capacity)
+        return;
+    
+    KeyValue kv;
+    kv.Key = EMPTY;
+    kv.Value = -1;
+    
+    _OcttreeRootHashMap[id.x] = kv;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+int _OcttreeDepth;
+//RWStructuredBuffer<int> _OcttreeNodeCount_Structured;
+AppendStructuredBuffer<OcttreeNode> _OcttreeNodeBuffer_Append;
+RWStructuredBuffer<int> _OcttreeIndirectArgs;
+
+#define NULL_DISTANCE 1000000.0
+
+#define NODE_COUNT _OcttreeIndirectArgs[3]
+#define COLLISION_COUNT _OcttreeIndirectArgs[4]
+
+bool TryAddRootNode(int3 coords, float rootNodeSize)
+{
+    uint key = HashInt3(coords);
+    uint slot = key % _Capacity;
+    
+    int i = 0;
+    while (i++ < MAX_CHECKS)
+    {
+        uint prev = EMPTY;
+        InterlockedCompareExchange(_OcttreeRootHashMap[slot].Key, EMPTY, key, prev);
+        if (prev == EMPTY)
+        {
+            OcttreeNode node;
+            node.Position = (float3(coords) + 0.5) * rootNodeSize;
+            node.Width = rootNodeSize;
+            node.Distance = NULL_DISTANCE;
+            //node.Hash = key;
+            //node.ID = key;
+            
+            _OcttreeNodeBuffer_Append.Append(node);
+            InterlockedAdd(NODE_COUNT, 1);
+            return true;
+        }
+
+        if (key == _OcttreeRootHashMap[slot].Key)
+        {
+            InterlockedAdd(COLLISION_COUNT, 1);
+            return false;
+        }
+        else
+        {
+            // collision
+            slot = (slot + 1) % _Capacity;
+        }
+    }
+    
+    return false;
+}
+
+float _RootSize;
+
+//struct TestBounds
+//{
+//    float3 Centre;
+//    float3 Size;
+//    uint Key;
+    
+//    float3 Min()
+//    {
+//        return Centre - (Size * 0.5);
+//    }
+    
+//    float3 Max()
+//    {
+//        return Centre + (Size * 0.5);
+//    }
+//};
+
+//StructuredBuffer<TestBounds> _TestBoundsInput;
+
+[numthreads(64, 1, 1)]
+void Octtree_FindRoots(int id : SV_DispatchThreadID)
+{
+    if (id.x >= _SDFDataCount)
+        return;
+    //if (id.x >= 2)
+    //    return;
+    
+    //float rootNodeSize = _CellSize * pow(2.0, _OcttreeDepth);
+    float rootNodeSize = _RootSize;
+    
+    SDFGPUData data = _SDFData[id.x];
+        
+    //// if it's an intersection, subtraction, or operation, it doesnt contribute
+    //if (data.Operation != 0)
+    //    return;
+    
+    int3 boundsMin = floor((data.MinBounds / rootNodeSize));
+    int3 boundsMax = floor((data.MaxBounds / rootNodeSize));
+    
+    for (int x = boundsMin.x; x <= boundsMax.x; x++)
+    {
+        for (int y = boundsMin.y; y <= boundsMax.y; y++)
+        {
+            for (int z = boundsMin.z; z <= boundsMax.z; z++)
+            {
+                TryAddRootNode(int3(x, y, z), rootNodeSize);
+            }
+        }
+    }
+    
+    InterlockedMax(_OcttreeIndirectArgs[0], max(1, ceil(NODE_COUNT / 64.0)));
+}
+
+////////////////// KERNEL #0, IDENTIFY SURFACE NODES ////////////////////////
+
+#define SQRT_3_OVER_2 0.866025403
+
+ConsumeStructuredBuffer<OcttreeNode> _OcttreeNodeBuffer_Consume;
+float _OcttreeNodePadding;
+
+[numthreads(64, 1, 1)]
+void Octtree_FindSurfaceNodes(uint3 id : SV_DispatchThreadID)
+{
+    if (NODE_COUNT <= 0 || id.x >= NODE_COUNT)
+        return;
+
+    OcttreeNode current = _OcttreeNodeBuffer_Consume.Consume();
+    InterlockedAdd(NODE_COUNT, -1);
+    
+    float signedDistance = current.Distance;
+    if (signedDistance >= NULL_DISTANCE)
+        signedDistance = Map(current.Position);
+
+    if (abs(signedDistance) <= ((current.Width * SQRT_3_OVER_2) + _OcttreeNodePadding))
+    {
+        // the isosurface is closer to the centre of the node than the
+        // corners of the node, so we split this node into 8 children for the next iteration
+        
+        [unroll(8)]
+        for (uint i = 0; i < 8; i++)
+        {
+            float3 position = current.Position + current.Width * 0.25 * unitCorners[i];
+            
+            OcttreeNode child;
+            child.Position = position;
+            child.Width = current.Width * 0.5;
+            child.Distance = Map(position);
+            //child.ID = (current.ID << 3) | i; // shift id 3 bits left and add the id for the new node
+            //child.Hash = 0;
+            _OcttreeNodeBuffer_Append.Append(child);
+        }
+        
+        InterlockedAdd(NODE_COUNT, 8);
+    }
+
+    // todo, is this correct, will the number of nodes always increase etc
+    InterlockedMax(_OcttreeIndirectArgs[0], max(1, ceil(NODE_COUNT / 64.0)));
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////// KERNEL #1, MAP GRID ////////////////////////////
+
+RWStructuredBuffer<float> _Samples;
+
 [numthreads(4, 4, 4)]
 void Isosurface_Map(uint3 id : SV_DispatchThreadID)
 {
@@ -135,6 +315,12 @@ void Isosurface_Map(uint3 id : SV_DispatchThreadID)
     
     _Samples[index] = Map(vertex);
 }
+
+/////////////////////////////////////////////////////////////////////////////
+
+////////////// KERNEL #2, GENERATE VERTICES PER GRID CELL ///////////////////
+
+RWStructuredBuffer<CellData> _CellDataPoints;
 
 bool TryGetEdgeSurfaceIntersection(float sample_from, float sample_to, float3 localPoint_from, float3 localPoint_to, float3 localOrigin, out float3 localIntersectionPoint)
 {
@@ -174,6 +360,116 @@ bool TryGetEdgeSurfaceIntersection(float sample_from, float sample_to, float3 lo
     return true;
 }
 
+bool TryGetSurfacePoint(OcttreeNode node, out float3 surfacePoint, out float3 normal)
+{
+    surfacePoint = float3(0, 0, 0);
+    normal = float3(0, 0, 0);
+    
+    float3 position = node.Position;
+    float width = node.Width;
+    
+    float3 corners[8] =
+    {
+        position + width * 0.25f * (LEFT + BACK + DOWN),
+        position + width * 0.25f * (RIGHT + BACK + DOWN),
+        
+        position + width * 0.25f * (LEFT + BACK + UP),
+        position + width * 0.25f * (RIGHT + BACK + UP),
+        
+        position + width * 0.25f * (LEFT + FORWARD + DOWN),
+        position + width * 0.25f * (RIGHT + FORWARD + DOWN),
+        
+        position + width * 0.25f * (LEFT + FORWARD + UP),
+        position + width * 0.25f * (RIGHT + FORWARD + UP)
+    };
+    
+    float samples[8] =
+    {
+        Map(corners[A]),
+        Map(corners[B]), //      g-------h
+        Map(corners[C]), //     /|      /|
+        Map(corners[D]), //    / |     / |
+        Map(corners[E]), //   c--|----d  |
+        Map(corners[F]), //   |  e----|--f
+        Map(corners[G]), //   | /     | /
+        Map(corners[H]), //   a-------b
+    };
+    
+    bool isOnSurface = false;
+    float sign_A = sign(Map(corners[A]));
+    
+    for (int i = 1; i < 8; i++)
+        isOnSurface = isOnSurface || (sign_A != sign(Map(corners[i])));
+    
+    if (!isOnSurface)
+        return false;
+    
+    // if we're on the surface, we need to check each grid edge from this grid vertex to check whether it intersects the surface
+    // we do this by checking whether the sign changes
+    // for each of the 12 edges, if the sign changes on the distance value between each vertex, there is a surface intersection
+    // at a point along the edge proportional to the change in distance
+    // the cube surface point is the average of all the edge intersection points (in surface nets)
+    // in dual contouring, the surface point is a vector which most closely approximates the point of intersection of all the planes
+    // which intersect the edge intersection points and are tangent to their normals
+    // ref: https://bonsairobo.medium.com/smooth-voxel-mapping-a-technical-deep-dive-on-real-time-surface-nets-and-texturing-ef06d0f8ca14
+    
+    float halfCellSize = 0.5 * node.Width;
+    float3 localCellOrigin = node.Position;
+    
+    int edgeIntersectionCount = 0;
+    float3 averageEdgeIntersectionPoint = float3(0.0, 0.0, 0.0);
+    float3 localEdgeIntersectionPoints[12];
+    
+    // iterate over each edge, checking if it intersects with the surface.
+    [fastopt]
+    for (int j = 0; j < 12; j++)
+    {
+        int from = edges[j][0];
+        int to = edges[j][1];
+        
+        float sample_from = samples[from];
+        float sample_to = samples[to];
+
+        float3 localEdgeIntersectionPoint;
+        if (TryGetEdgeSurfaceIntersection(sample_from, sample_to, unitCorners[from] * halfCellSize, unitCorners[to] * halfCellSize, localCellOrigin, localEdgeIntersectionPoint))
+        {
+            averageEdgeIntersectionPoint += localEdgeIntersectionPoint;
+            localEdgeIntersectionPoints[edgeIntersectionCount++] = localEdgeIntersectionPoint;
+        }
+    }
+    
+    if (edgeIntersectionCount <= 0)
+        return false;
+    
+    averageEdgeIntersectionPoint /= edgeIntersectionCount;
+    
+    float epsilon = node.Width * 0.01;
+    float3 localEdgeIntersectionNormals[12];
+    
+    [fastopt] 
+    for (int k = 0; k < edgeIntersectionCount; k++)
+    {
+        localEdgeIntersectionNormals[k] = MapNormal(localCellOrigin + localEdgeIntersectionPoints[k], epsilon);
+    }
+    
+    if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__SURFACENETS)
+    {
+        surfacePoint = localCellOrigin + averageEdgeIntersectionPoint;
+    }
+    else if (_IsosurfaceExtractionType == ISOSURFACE_EXTRACTION_TYPE__DUALCONTOURING)
+    {
+        surfacePoint = localCellOrigin + SolveQEF(edgeIntersectionCount, localEdgeIntersectionNormals, localEdgeIntersectionPoints, averageEdgeIntersectionPoint);
+    }
+    
+    for (int l = 0; l < _GradientDescentIterations; l++)
+    {
+        surfacePoint -= (MapNormal(surfacePoint, epsilon) * Map(surfacePoint));
+    }
+    
+    normal = MapNormal(surfacePoint, _VisualNormalSmoothing);
+    
+    return true;
+}
 
 bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cubeIndex, out float3 normal)
 {
@@ -283,8 +579,6 @@ bool TryGetSurfacePoint(int x, int y, int z, out float3 surfacePoint, out int cu
     return true;
 }
 
-RWStructuredBuffer<CellData> _CellDataPoints;
-
 // this kernel is dispatched per cell in the form x, y, z
 [numthreads(4, 4, 4)]
 void Isosurface_GenerateVertices(uint3 id : SV_DispatchThreadID)
@@ -324,6 +618,10 @@ void Isosurface_GenerateVertices(uint3 id : SV_DispatchThreadID)
     InterlockedMax(VERTEX_COUNT_DIV_64, ceil(VERTEX_COUNT / 64.0));
 }
 
+/////////////////////////////////////////////////////////////////////////////
+
+/////////////// KERNEL #3, NUMBER EACH GENERATED VERTEX /////////////////////
+
 RWStructuredBuffer<VertexData> _VertexDataPoints_Structured;
 AppendStructuredBuffer<TriangleData> _TriangleDataPoints;
 
@@ -349,6 +647,18 @@ void Isosurface_NumberVertices(uint3 id : SV_DispatchThreadID)
     
     _CellDataPoints[data.CellID].VertexID = id.x;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+
+///////////////////// KERNEL #4, CONNECT VERTICES ////////////////////////////
+
+RWStructuredBuffer<float3> _MeshVertices;
+RWStructuredBuffer<float3> _MeshNormals;
+//RWStructuredBuffer<float2> _MeshUVs;
+RWStructuredBuffer<SDFMaterialGPU> _MeshVertexMaterials;
+RWStructuredBuffer<int> _MeshTriangles;
+
+RWStructuredBuffer<int> _ProceduralArgs;
 
 bool TryGetAdjacentCubesX(int x, int y, int z, out int cube0index, out int cube1index, out int cube2index, out float edgeDist_A, out float edgeDist_B)
 {
@@ -471,14 +781,6 @@ void TryCreateTriangles(int index, float3 surfacePoint, int cube0, int cube1, in
     }
 }
 
-RWStructuredBuffer<float3> _MeshVertices;
-RWStructuredBuffer<float3> _MeshNormals;
-//RWStructuredBuffer<float2> _MeshUVs;
-RWStructuredBuffer<SDFMaterialGPU> _MeshVertexMaterials;
-RWStructuredBuffer<int> _MeshTriangles;
-
-RWStructuredBuffer<int> _ProceduralArgs;
-
 // the purpose of this kernel is to generate up to 6 triangles (3 quads, one for each axis) 
 // for each surface point (which will become the mesh vertices)
 [numthreads(64, 1, 1)]
@@ -539,6 +841,10 @@ void Isosurface_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     // setting indirect args for procedural drawing
     InterlockedMax(_ProceduralArgs[0], TRIANGLE_COUNT * 3);
 }
+
+/////////////////////////////////////////////////////////////////////////////
+
+//// KERNEL #5, GENERATE TRIANGLE INDICES AND IDENTIFY SHARP EDGES //////////
 
 AppendStructuredBuffer<NewVertexData> _IntermediateVertexBuffer;
 StructuredBuffer<TriangleData> _TriangleDataPoints_Structured;
@@ -614,6 +920,10 @@ void Isosurface_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
     InterlockedMax(INTERMEDIATE_VERTEX_COUNT_DIV_64, ceil(INTERMEDIATE_VERTEX_COUNT / 64.0));
 }
 
+/////////////////////////////////////////////////////////////////////////////
+
+///////////////////// KERNEL #6, SPLIT SHARP EDGES //////////////////////////
+
 StructuredBuffer<NewVertexData> _IntermediateVertexBuffer_Structured;
 
 // this is an optional final step which switches out some of the mesh vertices for newly generated ones
@@ -641,3 +951,5 @@ void Isosurface_AddIntermediateVerticesToIndexBuffer(uint3 id : SV_DispatchThrea
     //InterlockedAdd(VERTEX_COUNT, 1);
     //InterlockedMax(VERTEX_COUNT_DIV_64, ceil(VERTEX_COUNT / 64.0));
 }
+
+/////////////////////////////////////////////////////////////////////////////
