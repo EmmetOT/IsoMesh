@@ -474,6 +474,7 @@ void TryCreateTriangles(int index, float3 surfacePoint, int cube0, int cube1, in
 RWStructuredBuffer<float3> _MeshVertices;
 RWStructuredBuffer<float3> _MeshNormals;
 //RWStructuredBuffer<float2> _MeshUVs;
+RWStructuredBuffer<float4> _MeshVertexColours;
 RWStructuredBuffer<SDFMaterialGPU> _MeshVertexMaterials;
 RWStructuredBuffer<int> _MeshTriangles;
 
@@ -493,7 +494,10 @@ void Isosurface_GenerateTriangles(uint3 id : SV_DispatchThreadID)
     _MeshVertices[id.x] = data.Vertex;
     _MeshNormals[id.x] = data.Normal;
     //_MeshUVs[id.x] = MapUV(data.Vertex);
-    _MeshVertexMaterials[id.x] = MapColour(data.Vertex);
+    
+    SDFMaterialGPU mat = MapColour(data.Vertex);
+    
+    _MeshVertexMaterials[id.x] = mat;
     
     // we can use the vertex index to access the id number of the cell containing it,
     // and with that calculate the coordinate of the cell point
@@ -611,6 +615,14 @@ void Isosurface_BuildIndexBuffer(uint3 id : SV_DispatchThreadID)
     _MeshTriangles[id.x * 3 + 1] = index_2;
     _MeshTriangles[id.x * 3 + 2] = index_3;
     
+    SDFMaterialGPU material_1 = _MeshVertexMaterials[index_1];
+    SDFMaterialGPU material_2 = _MeshVertexMaterials[index_2];
+    SDFMaterialGPU material_3 = _MeshVertexMaterials[index_3];
+    
+    _MeshVertexColours[index_1] = float4(material_1.Colour, material_1.Metallic);
+    _MeshVertexColours[index_2] = float4(material_2.Colour, material_2.Metallic);
+    _MeshVertexColours[index_3] = float4(material_3.Colour, material_3.Metallic);
+    
     InterlockedMax(INTERMEDIATE_VERTEX_COUNT_DIV_64, ceil(INTERMEDIATE_VERTEX_COUNT / 64.0));
 }
 
@@ -636,6 +648,7 @@ void Isosurface_AddIntermediateVerticesToIndexBuffer(uint3 id : SV_DispatchThrea
     _MeshNormals[index] = newVertex.Normal;
     //_MeshUVs[index] = uv;
     _MeshVertexMaterials[index] = material;
+    _MeshVertexColours[index] = float4(material.Colour, material.Metallic);
     
     // doing this will mess with the vertex counts above in a race condition
     //InterlockedAdd(VERTEX_COUNT, 1);

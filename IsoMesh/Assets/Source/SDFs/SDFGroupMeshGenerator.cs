@@ -51,6 +51,7 @@ namespace IsoMesh
             public static readonly int MeshNormals_RWBuffer = Shader.PropertyToID("_MeshNormals");
             public static readonly int MeshTriangles_RWBuffer = Shader.PropertyToID("_MeshTriangles");
             //public static readonly int MeshUVs_RWBuffer = Shader.PropertyToID("_MeshUVs");
+            public static readonly int MeshVertexColours_RWBuffer = Shader.PropertyToID("_MeshVertexColours");
             public static readonly int MeshVertexMaterials_RWBuffer = Shader.PropertyToID("_MeshVertexMaterials");
 
             public static readonly int IntermediateVertexBuffer_AppendBuffer = Shader.PropertyToID("_IntermediateVertexBuffer");
@@ -111,6 +112,7 @@ namespace IsoMesh
         private ComputeBuffer m_meshTrianglesBuffer;
         //private ComputeBuffer m_meshUVsBuffer;
         private ComputeBuffer m_meshVertexMaterialsBuffer;
+        private ComputeBuffer m_meshVertexColoursBuffer;
         private ComputeBuffer m_intermediateVertexBuffer;
         private ComputeBuffer m_counterBuffer;
         private ComputeBuffer m_proceduralArgsBuffer;
@@ -205,6 +207,19 @@ namespace IsoMesh
         }
 
         [SerializeField]
+        private Material m_proceduralMeshMaterial;
+        private Material ProceduralMeshMaterial
+        {
+            get
+            {
+                if (!m_proceduralMeshMaterial)
+                    m_proceduralMeshMaterial = Resources.Load<Material>("Procedural_MeshMaterial");
+
+                return m_proceduralMeshMaterial;
+            }
+        }
+
+        [SerializeField]
         private MeshRenderer m_meshRenderer;
         public MeshRenderer MeshRenderer
         {
@@ -212,9 +227,16 @@ namespace IsoMesh
             {
                 if (!m_meshRenderer && TryGetOrCreateMeshGameObject(out GameObject meshGameObject))
                 {
-                    m_meshRenderer = meshGameObject.GetComponent<MeshRenderer>();
+                    m_meshRenderer = meshGameObject.GetOrAddComponent<MeshRenderer>();
+
+                    if (!m_meshRenderer.sharedMaterial)
+                        m_meshRenderer.sharedMaterial = ProceduralMeshMaterial;
+
                     return m_meshRenderer;
                 }
+
+                if (!m_meshRenderer.sharedMaterial)
+                    m_meshRenderer.sharedMaterial = ProceduralMeshMaterial;
 
                 return m_meshRenderer;
             }
@@ -377,7 +399,20 @@ namespace IsoMesh
                 m_outputCounterNativeArray = new NativeArray<int>(m_counterBuffer.count, Allocator.Persistent);
 
             AsyncGPUReadbackRequest counterRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_outputCounterNativeArray, m_counterBuffer);
+
+            if (counterRequest.hasError)
+            {
+                Debug.LogError("AsyncGPUReadbackRequest encountered an error.");
+                return;
+            }
+
             counterRequest.WaitForCompletion();
+
+            if (counterRequest.hasError)
+            {
+                Debug.LogError("AsyncGPUReadbackRequest encountered an error.");
+                return;
+            }
 
             GetCounts(m_outputCounterNativeArray, out int vertexCount, out int triangleCount);
 
@@ -391,12 +426,24 @@ namespace IsoMesh
                 AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 //AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
-                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexMaterialsBuffer, vertexRequestSize * SDFMaterialGPU.Stride, 0);
+                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexColoursBuffer, vertexRequestSize * sizeof(float) * 4, 0);
                 AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, triangleRequestSize * sizeof(int), 0);
+
+                if (vertexRequest.hasError || normalRequest.hasError || colourRequest.hasError || triangleRequest.hasError)
+                {
+                    Debug.LogError("AsyncGPUReadbackRequest encountered an error.");
+                    return;
+                }
 
                 AsyncGPUReadback.WaitAllRequests();
 
-                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals/*, m_nativeArrayUVs*/,m_nativeArrayColours, m_nativeArrayTriangles, vertexCount, triangleCount);
+                if (vertexRequest.hasError || normalRequest.hasError || colourRequest.hasError || triangleRequest.hasError)
+                {
+                    Debug.LogError("AsyncGPUReadbackRequest encountered an error.");
+                    return;
+                }
+
+                SetMeshData(m_nativeArrayVertices, m_nativeArrayNormals/*, m_nativeArrayUVs*/, m_nativeArrayColours, m_nativeArrayTriangles, vertexCount, triangleCount);
             }
             else
             {
@@ -442,7 +489,7 @@ namespace IsoMesh
                 AsyncGPUReadbackRequest vertexRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayVertices, m_meshVerticesBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 AsyncGPUReadbackRequest normalRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayNormals, m_meshNormalsBuffer, vertexRequestSize * sizeof(float) * 3, 0);
                 //AsyncGPUReadbackRequest uvRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayUVs, m_meshUVsBuffer, vertexRequestSize * sizeof(float) * 2, 0);
-                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexMaterialsBuffer, vertexRequestSize * SDFMaterialGPU.Stride, 0);
+                AsyncGPUReadbackRequest colourRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayColours, m_meshVertexColoursBuffer, vertexRequestSize * sizeof(float) * 4, 0);
                 AsyncGPUReadbackRequest triangleRequest = AsyncGPUReadback.RequestIntoNativeArray(ref m_nativeArrayTriangles, m_meshTrianglesBuffer, triangleRequestSize * sizeof(int), 0);
 
                 while (!vertexRequest.done && !normalRequest.done && !colourRequest.done/*!uvRequest.done*/ && !triangleRequest.done)
@@ -610,6 +657,7 @@ namespace IsoMesh
             m_meshNormalsBuffer?.Dispose();
             m_meshTrianglesBuffer?.Dispose();
             //m_meshUVsBuffer?.Dispose();
+            m_meshVertexColoursBuffer?.Dispose();
             m_meshVertexMaterialsBuffer?.Dispose();
 
             m_intermediateVertexBuffer?.Dispose();
@@ -623,6 +671,7 @@ namespace IsoMesh
             m_meshNormalsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 3, ComputeBufferType.Structured);
             m_meshTrianglesBuffer = new ComputeBuffer(countCubed * 3, sizeof(int), ComputeBufferType.Structured);
             //m_meshUVsBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 2, ComputeBufferType.Structured);
+            m_meshVertexColoursBuffer = new ComputeBuffer(countCubed * 3, sizeof(float) * 4, ComputeBufferType.Structured);
             m_meshVertexMaterialsBuffer = new ComputeBuffer(countCubed * 3, SDFMaterialGPU.Stride, ComputeBufferType.Structured);
 
             m_intermediateVertexBuffer = new ComputeBuffer(countCubed * 3, NewVertexData.Stride, ComputeBufferType.Append);
@@ -653,6 +702,8 @@ namespace IsoMesh
 
             m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.MeshTriangles_RWBuffer, m_meshTrianglesBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.IntermediateVertexBuffer_AppendBuffer, m_intermediateVertexBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.MeshVertexColours_RWBuffer, m_meshVertexColoursBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.BuildIndexBuffer, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
 
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertices_RWBuffer, m_meshVerticesBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshNormals_RWBuffer, m_meshNormalsBuffer);
@@ -660,6 +711,7 @@ namespace IsoMesh
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertexMaterials_RWBuffer, m_meshVertexMaterialsBuffer);
             //m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshUVs_RWBuffer, m_meshUVsBuffer);
             m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.IntermediateVertexBuffer_StructuredBuffer, m_intermediateVertexBuffer);
+            m_computeShaderInstance.SetBuffer(m_kernels.AddIntermediateVerticesToIndexBuffer, Properties.MeshVertexColours_RWBuffer, m_meshVertexColoursBuffer);
 
             m_bounds = new Bounds { extents = m_voxelSettings.Extents };
 
@@ -688,6 +740,7 @@ namespace IsoMesh
             m_meshNormalsBuffer?.Dispose();
             m_meshTrianglesBuffer?.Dispose();
             //m_meshUVsBuffer?.Dispose();
+            m_meshVertexColoursBuffer?.Dispose();
             m_meshVertexMaterialsBuffer?.Dispose();
 
             m_intermediateVertexBuffer?.Dispose();
