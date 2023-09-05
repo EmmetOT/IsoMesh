@@ -64,3 +64,5 @@ Ignore
 /IsoMesh/.vs
 
 IsoMesh/.idea/.idea.IsoMesh/.idea/
+
+.idea/
