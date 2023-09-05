@@ -3,17 +3,8 @@ IsoMesh is a group of related tools for Unity for converting meshes into signed 
 
 这个项目是一个用于Unity的相关工具集，可将网格转换为有符号距离场数据（Signed Distance Field，SDF），通过光线行进SDF以及通过表面网格或双重等值面提取SDF数据并还原为网格。所有这些工作都是在GPU上使用计算着色器并行处理的。
 
-My motivation for making this was simple: I want to make a game in which I morph and manipulate meshes, and this seemed like the right technique for the job. Isosurface extraction is most often used for stuff like terrain manipulation. Check out No Man's Sky, for example.
-
-制作这个项目的动机很简单：我想制作一个游戏，在游戏中我可以改变和操作网格，而这似乎是合适的技术。等值面提取通常用于类似地形操作的任务。例如，可以查看《无人之境》（No Man's Sky）。
-
-I decided to share my code here because it represents a lot of trial and error and research on my part. And frankly, I just think it's cool.
-
-我决定在这里分享我的代码，因为它代表了我付出了很多试验、错误和研究的努力。而且，说实话，我觉得这很酷。
-
 ![isomesh10](https://user-images.githubusercontent.com/18707147/121936495-99b0c800-cd41-11eb-910b-83113b790c86.gif)
 
-The project is currently being developed and tested on Unity 2021.2.0f1.
 
 ## Signed Distance Fields
 A signed distance field, or 'SDF', is a function which takes a position in space and returns the distance from that point to the surface of an object. The distance is negative if the point is inside the object. These functions can be used to represent all sorts of groovy shapes, and are in some sense 'volumetric', as opposed to the more traditional polygon-based way of representing geometry.
