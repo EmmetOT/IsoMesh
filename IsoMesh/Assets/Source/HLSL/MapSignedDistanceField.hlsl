@@ -221,7 +221,7 @@ float3 unsignedDirection_mesh(float3 p, SDFGPUData data, out float distSign, out
     
     return finalVec;
 }
-
+// 是不是在这里,直接把data值改成0
 float sdf(float3 p, SDFGPUData data)
 {
     if (data.IsMesh())
@@ -343,7 +343,11 @@ float Map(float3 p)
             if (data.Operation == 0)
                 minDist = sdf_op_smin(sdf(p, data), minDist, data.Smoothing);
             else if (data.Operation == 1)
+            {
                 minDist = sdf_op_smoothSubtraction(sdf(p, data), minDist, data.Smoothing);
+                //在这里把data里的那个数据给改成0?
+                
+            }
             else
                 minDist = sdf_op_smoothIntersection(sdf(p, data), minDist, data.Smoothing);
         }

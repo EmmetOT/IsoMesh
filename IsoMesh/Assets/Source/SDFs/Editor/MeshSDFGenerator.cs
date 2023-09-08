@@ -9,56 +9,41 @@ namespace IsoMesh.Editor
 {
     public class MeshSDFGenerator : EditorWindow
     {
+        #region Fields
+
         private const string ASSET_SAVE_PATH = "Assets/Data/SDFMeshes/";
 
-        [SerializeField]
-        [HideInInspector]
-        private ComputeShader m_meshSampleComputeShader;
+        [SerializeField] [HideInInspector] private ComputeShader m_meshSampleComputeShader;
 
-        [SerializeField]
-        [HideInInspector]
-        private ComputeShader m_tesselationComputeShader;
+        [SerializeField] [HideInInspector] private ComputeShader m_tesselationComputeShader;
 
-        [SerializeField]
-        private Mesh m_mesh;
+        [SerializeField] private Mesh m_mesh;
 
         private bool MissingMesh => m_mesh == null;
 
-        [SerializeField]
-        [Min(1)]
-        private int m_size = 128;
+        [SerializeField] [Min(1)] private int m_size = 128;
 
-        [SerializeField]
-        private float m_padding = 0.2f;
+        [SerializeField] private float m_padding = 0.2f;
 
-        [SerializeField]
-        private Vector3 m_translation = Vector3.zero;
+        [SerializeField] private Vector3 m_translation = Vector3.zero;
 
-        [SerializeField]
-        private Vector3 m_rotation = Vector3.zero;
+        [SerializeField] private Vector3 m_rotation = Vector3.zero;
 
-        [SerializeField]
-        private Vector3 m_scale = Vector3.one;
+        [SerializeField] private Vector3 m_scale = Vector3.one;
 
         private Matrix4x4 ModelTransform => Matrix4x4.TRS(m_translation, Quaternion.Euler(m_rotation), m_scale);
 
-        [SerializeField]
-        private bool m_tesselateMesh = false;
+        [SerializeField] private bool m_tesselateMesh = false;
 
-        [SerializeField]
-        private Mesh m_tessellatedMesh;
+        [SerializeField] private Mesh m_tessellatedMesh;
 
-        [SerializeField]
-        private int m_subdivisions = 1;
+        [SerializeField] private int m_subdivisions = 1;
 
-        [SerializeField]
-        private float m_minimumEdgeLength = 0.15f;
+        [SerializeField] private float m_minimumEdgeLength = 0.15f;
 
-        [SerializeField]
-        private bool m_sampleUVs = true;
+        [SerializeField] private bool m_sampleUVs = true;
 
-        [SerializeField]
-        private bool m_autosaveOnComplete = false;
+        [SerializeField] private bool m_autosaveOnComplete = false;
 
         private float[] m_samples;
         private float[] m_packedUVs;
@@ -73,6 +58,8 @@ namespace IsoMesh.Editor
         private static MeshSDFGenerator m_window;
         private SerializedObject m_serializedObject;
         private SerializedProperties m_serializedProperties;
+
+        #endregion
 
         private class SerializedProperties
         {
@@ -104,12 +91,14 @@ namespace IsoMesh.Editor
         {
             m_tessellatedMesh = null;
 
-            using (ComputeSession session = new ComputeSession(m_meshSampleComputeShader, m_tesselationComputeShader, m_size, m_padding, m_sampleUVs, ModelTransform))
+            using (ComputeSession session = new ComputeSession(m_meshSampleComputeShader, m_tesselationComputeShader,
+                       m_size, m_padding, m_sampleUVs, ModelTransform))
             {
                 System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
                 if (m_tesselateMesh)
-                    session.DispatchWithTesselation(m_mesh, m_subdivisions, m_minimumEdgeLength, out m_samples, out m_packedUVs, out m_minBounds, out m_maxBounds, out m_tessellatedMesh);
+                    session.DispatchWithTesselation(m_mesh, m_subdivisions, m_minimumEdgeLength, out m_samples,
+                        out m_packedUVs, out m_minBounds, out m_maxBounds, out m_tessellatedMesh);
                 else
                     session.Dispatch(m_mesh, out m_samples, out m_packedUVs, out m_minBounds, out m_maxBounds);
 
@@ -128,7 +117,8 @@ namespace IsoMesh.Editor
             if (!CanSave)
                 return;
 
-            SDFMeshAsset.Create(ASSET_SAVE_PATH, "SDFMesh_" + m_mesh.name, m_samples, m_packedUVs, m_lastSubdivisionLevel, m_size, m_padding, m_mesh, m_minBounds, m_maxBounds);
+            SDFMeshAsset.Create(ASSET_SAVE_PATH, "SDFMesh_" + m_mesh.name, m_samples, m_packedUVs,
+                m_lastSubdivisionLevel, m_size, m_padding, m_mesh, m_minBounds, m_maxBounds);
         }
 
         private bool m_transformBoxOpened = false;
@@ -142,7 +132,8 @@ namespace IsoMesh.Editor
             {
                 m_scrollPos = scroll.scrollPosition;
 
-                Mesh newMesh = (Mesh)EditorGUILayout.ObjectField("Mesh", m_mesh, typeof(Mesh), allowSceneObjects: false);
+                Mesh newMesh =
+                    (Mesh)EditorGUILayout.ObjectField("Mesh", m_mesh, typeof(Mesh), allowSceneObjects: false);
 
                 if (m_mesh != newMesh)
                 {
@@ -196,7 +187,8 @@ namespace IsoMesh.Editor
                         {
                             if (m_tessellatedMesh != null)
                             {
-                                if (m_tesselatedMeshPreview != null && m_tesselatedMeshPreview.serializedObject.targetObject as Mesh != m_tessellatedMesh)
+                                if (m_tesselatedMeshPreview != null &&
+                                    m_tesselatedMeshPreview.serializedObject.targetObject as Mesh != m_tessellatedMesh)
                                 {
                                     DestroyImmediate(m_tesselatedMeshPreview);
                                     m_tesselatedMeshPreview = null;
@@ -208,8 +200,10 @@ namespace IsoMesh.Editor
                                 m_tesselatedMeshPreview.DrawPreview(GUILayoutUtility.GetRect(200, 200));
                             }
 
-                            m_subdivisions = Mathf.Clamp(EditorGUILayout.IntField("Subdivisions", m_subdivisions), 0, 4);
-                            m_minimumEdgeLength = Mathf.Max(EditorGUILayout.FloatField("Minimum Edge Length", m_minimumEdgeLength), 0f);
+                            m_subdivisions = Mathf.Clamp(EditorGUILayout.IntField("Subdivisions", m_subdivisions), 0,
+                                4);
+                            m_minimumEdgeLength =
+                                Mathf.Max(EditorGUILayout.FloatField("Minimum Edge Length", m_minimumEdgeLength), 0f);
 
 
                             //this.DrawIntField("Subdivisions", ref m_subdivisions, min: 0, max: 4);
@@ -320,7 +314,8 @@ namespace IsoMesh.Editor
 
             public int Dimensions => m_size * m_size * m_size;
 
-            public ComputeSession(ComputeShader meshSampleComputeShader, ComputeShader tesselationComputeShader, int size, float padding, bool sampleUVs, Matrix4x4 transform)
+            public ComputeSession(ComputeShader meshSampleComputeShader, ComputeShader tesselationComputeShader,
+                int size, float padding, bool sampleUVs, Matrix4x4 transform)
             {
                 MeshSampleComputeShader = Instantiate(meshSampleComputeShader);
                 TessellationComputeShader = Instantiate(tesselationComputeShader);
@@ -338,13 +333,16 @@ namespace IsoMesh.Editor
                 m_packedUVs = new float[Dimensions];
 
                 BoundsBuffer = new ComputeBuffer(6, sizeof(int));
-                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.MeshBounds_RWStructuredBuffer, BoundsBuffer);
+                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.MeshBounds_RWStructuredBuffer,
+                    BoundsBuffer);
 
                 SamplesBuffer = new ComputeBuffer(Dimensions, sizeof(float));
-                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.Samples_RWStructuredBuffer, SamplesBuffer);
+                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.Samples_RWStructuredBuffer,
+                    SamplesBuffer);
 
                 PackedUVsBuffer = new ComputeBuffer(Dimensions, sizeof(float));
-                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.PackedUVs_RWStructuredBuffer, PackedUVsBuffer);
+                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.PackedUVs_RWStructuredBuffer,
+                    PackedUVsBuffer);
 
                 MeshSampleComputeShader.SetInt(Properties.Size_Int, m_size);
                 MeshSampleComputeShader.SetFloat(Properties.Padding_Float, m_padding);
@@ -373,7 +371,8 @@ namespace IsoMesh.Editor
                 DestroyImmediate(TessellationComputeShader);
             }
 
-            public void Dispatch(Mesh mesh, out float[] samples, out float[] packedUVs, out Vector3 minBounds, out Vector3 maxBounds)
+            public void Dispatch(Mesh mesh, out float[] samples, out float[] packedUVs, out Vector3 minBounds,
+                out Vector3 maxBounds)
             {
                 m_triangles = mesh.triangles;
                 m_vertices = mesh.vertices;
@@ -381,19 +380,26 @@ namespace IsoMesh.Editor
                 m_uvs = mesh.uv;
 
                 InputTrianglesBuffer = new ComputeBuffer(m_triangles.Length, sizeof(int), ComputeBufferType.Structured);
-                InputVerticesBuffer = new ComputeBuffer(m_vertices.Length, sizeof(float) * 3, ComputeBufferType.Structured);
-                InputNormalsBuffer = new ComputeBuffer(m_normals.Length, sizeof(float) * 3, ComputeBufferType.Structured);
+                InputVerticesBuffer =
+                    new ComputeBuffer(m_vertices.Length, sizeof(float) * 3, ComputeBufferType.Structured);
+                InputNormalsBuffer =
+                    new ComputeBuffer(m_normals.Length, sizeof(float) * 3, ComputeBufferType.Structured);
 
                 InputTrianglesBuffer.SetData(m_triangles);
                 InputNormalsBuffer.SetData(m_normals);
                 InputVerticesBuffer.SetData(m_vertices);
 
-                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.InputTriangles_StructuredBuffer, InputTrianglesBuffer);
-                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.InputVertices_StructuredBuffer, InputVerticesBuffer);
+                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.InputTriangles_StructuredBuffer,
+                    InputTrianglesBuffer);
+                MeshSampleComputeShader.SetBuffer(ComputeBoundsKernel, Properties.InputVertices_StructuredBuffer,
+                    InputVerticesBuffer);
 
-                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputTriangles_StructuredBuffer, InputTrianglesBuffer);
-                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputNormals_StructuredBuffer, InputNormalsBuffer);
-                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputVertices_StructuredBuffer, InputVerticesBuffer);
+                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputTriangles_StructuredBuffer,
+                    InputTrianglesBuffer);
+                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputNormals_StructuredBuffer,
+                    InputNormalsBuffer);
+                MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputVertices_StructuredBuffer,
+                    InputVerticesBuffer);
 
                 bool hasUVs = !m_uvs.IsNullOrEmpty();
                 if (m_sampleUVs && hasUVs)
@@ -401,7 +407,8 @@ namespace IsoMesh.Editor
                     MeshSampleComputeShader.EnableKeyword(WriteUVsKeyword);
                     InputUVsBuffer = new ComputeBuffer(m_uvs.Length, sizeof(float) * 2, ComputeBufferType.Structured);
                     InputUVsBuffer.SetData(m_uvs);
-                    MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputUVs_StructuredBuffer, InputUVsBuffer);
+                    MeshSampleComputeShader.SetBuffer(GetTextureWholeKernel, Properties.InputUVs_StructuredBuffer,
+                        InputUVsBuffer);
                 }
                 else
                 {
@@ -415,7 +422,9 @@ namespace IsoMesh.Editor
                 RunSamplePhase(hasUVs, out samples, out packedUVs, minBounds, maxBounds);
             }
 
-            public void DispatchWithTesselation(Mesh mesh, int subdivisions, float minimumEdgeLength, out float[] samples, out float[] packedUVs, out Vector3 minBounds, out Vector3 maxBounds, out Mesh tessellatedMesh)
+            public void DispatchWithTesselation(Mesh mesh, int subdivisions, float minimumEdgeLength,
+                out float[] samples, out float[] packedUVs, out Vector3 minBounds, out Vector3 maxBounds,
+                out Mesh tessellatedMesh)
             {
                 m_triangles = mesh.triangles;
                 m_vertices = mesh.vertices;
@@ -431,13 +440,16 @@ namespace IsoMesh.Editor
             {
                 int[] meshBounds = new int[6];
                 BoundsBuffer.SetData(meshBounds);
-                MeshSampleComputeShader.Dispatch(ComputeBoundsKernel, Mathf.CeilToInt(mesh.triangles.Length / 64f), 1, 1);
+                MeshSampleComputeShader.Dispatch(ComputeBoundsKernel, Mathf.CeilToInt(mesh.triangles.Length / 64f), 1,
+                    1);
                 BoundsBuffer.GetData(meshBounds);
 
                 const float packingMultiplier = 1000f;
 
-                minBounds = new Vector3(meshBounds[0] / packingMultiplier, meshBounds[1] / packingMultiplier, meshBounds[2] / packingMultiplier);
-                maxBounds = new Vector3(meshBounds[3] / packingMultiplier, meshBounds[4] / packingMultiplier, meshBounds[5] / packingMultiplier);
+                minBounds = new Vector3(meshBounds[0] / packingMultiplier, meshBounds[1] / packingMultiplier,
+                    meshBounds[2] / packingMultiplier);
+                maxBounds = new Vector3(meshBounds[3] / packingMultiplier, meshBounds[4] / packingMultiplier,
+                    meshBounds[5] / packingMultiplier);
 
                 minBounds -= m_padding * Vector3.one;
                 maxBounds += m_padding * Vector3.one;
@@ -447,7 +459,8 @@ namespace IsoMesh.Editor
             /// Note: I chose to use buffers instead of writing to texture 3ds directly on the GPU because for some reason it's
             /// stupidly complicated to write to a texture3d on the gpu and then get that data back to the cpu for serialization.
             /// </summary>
-            private void RunSamplePhase(bool hasUVs, out float[] samples, out float[] packedUVs, Vector3 minBounds, Vector3 maxBounds)
+            private void RunSamplePhase(bool hasUVs, out float[] samples, out float[] packedUVs, Vector3 minBounds,
+                Vector3 maxBounds)
             {
                 MeshSampleComputeShader.SetVector(Properties.MinBounds_Vector3, minBounds);
                 MeshSampleComputeShader.SetVector(Properties.MaxBounds_Vector3, maxBounds);
@@ -518,17 +531,25 @@ namespace IsoMesh.Editor
                     TessellationComputeShader.SetBuffer(PreprocessMeshKernel, nameID, buffer);
                 }
 
-                SetInputPreprocess(m_vertices, sizeof(float) * 3, Properties.InputVertices_StructuredBuffer, ref InputVerticesBuffer);
-                SetInputPreprocess(m_normals, sizeof(float) * 3, Properties.InputNormals_StructuredBuffer, ref InputNormalsBuffer);
-                SetInputPreprocess(m_tangents, sizeof(float) * 4, Properties.InputTangents_StructuredBuffer, ref InputTangentsBuffer);
+                SetInputPreprocess(m_vertices, sizeof(float) * 3, Properties.InputVertices_StructuredBuffer,
+                    ref InputVerticesBuffer);
+                SetInputPreprocess(m_normals, sizeof(float) * 3, Properties.InputNormals_StructuredBuffer,
+                    ref InputNormalsBuffer);
+                SetInputPreprocess(m_tangents, sizeof(float) * 4, Properties.InputTangents_StructuredBuffer,
+                    ref InputTangentsBuffer);
                 SetInputPreprocess(m_uvs, sizeof(float) * 2, Properties.InputUVs_StructuredBuffer, ref InputUVsBuffer);
-                SetInputPreprocess(m_triangles, sizeof(int), Properties.InputTriangles_StructuredBuffer, ref InputTrianglesBuffer);
+                SetInputPreprocess(m_triangles, sizeof(int), Properties.InputTriangles_StructuredBuffer,
+                    ref InputTrianglesBuffer);
 
-                SetOutputPreprocess(sizeof(float) * 3, Properties.OutputVertices_StructuredBuffer, ref OutputVerticesBuffer);
-                SetOutputPreprocess(sizeof(float) * 3, Properties.OutputNormals_StructuredBuffer, ref OutputNormalsBuffer);
-                SetOutputPreprocess(sizeof(float) * 4, Properties.OutputTangents_StructuredBuffer, ref OutputTangentsBuffer);
+                SetOutputPreprocess(sizeof(float) * 3, Properties.OutputVertices_StructuredBuffer,
+                    ref OutputVerticesBuffer);
+                SetOutputPreprocess(sizeof(float) * 3, Properties.OutputNormals_StructuredBuffer,
+                    ref OutputNormalsBuffer);
+                SetOutputPreprocess(sizeof(float) * 4, Properties.OutputTangents_StructuredBuffer,
+                    ref OutputTangentsBuffer);
                 SetOutputPreprocess(sizeof(float) * 2, Properties.OutputUVs_StructuredBuffer, ref OutputUVsBuffer);
-                SetOutputPreprocess(sizeof(int), Properties.OutputTriangles_StructuredBuffer, ref OutputTrianglesBuffer);
+                SetOutputPreprocess(sizeof(int), Properties.OutputTriangles_StructuredBuffer,
+                    ref OutputTrianglesBuffer);
 
                 TessellationComputeShader.SetInt(Properties.TriangleCount_Int, triangleCount);
 
@@ -547,11 +568,16 @@ namespace IsoMesh.Editor
                     int outputTriangles = triangles * 4;
 
                     // output from preprocess goes to input of tessellate
-                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputVertices_StructuredBuffer, OutputVerticesBuffer);
-                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputNormals_StructuredBuffer, OutputNormalsBuffer);
-                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputTangents_StructuredBuffer, OutputTangentsBuffer);
-                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputUVs_StructuredBuffer, OutputUVsBuffer);
-                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputTriangles_StructuredBuffer, OutputTrianglesBuffer);
+                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputVertices_StructuredBuffer,
+                        OutputVerticesBuffer);
+                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputNormals_StructuredBuffer,
+                        OutputNormalsBuffer);
+                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputTangents_StructuredBuffer,
+                        OutputTangentsBuffer);
+                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputUVs_StructuredBuffer,
+                        OutputUVsBuffer);
+                    TessellationComputeShader.SetBuffer(TessellateKernel, Properties.InputTriangles_StructuredBuffer,
+                        OutputTrianglesBuffer);
 
                     void SetOutputTessellate(int stride, int nameID, ref ComputeBuffer buffer)
                     {
@@ -565,11 +591,15 @@ namespace IsoMesh.Editor
                     ComputeBuffer oldOutputUVs = OutputUVsBuffer;
                     ComputeBuffer oldOutputTriangles = OutputTrianglesBuffer;
 
-                    SetOutputTessellate(sizeof(float) * 3, Properties.OutputVertices_StructuredBuffer, ref OutputVerticesBuffer);
-                    SetOutputTessellate(sizeof(float) * 3, Properties.OutputNormals_StructuredBuffer, ref OutputNormalsBuffer);
-                    SetOutputTessellate(sizeof(float) * 4, Properties.OutputTangents_StructuredBuffer, ref OutputTangentsBuffer);
+                    SetOutputTessellate(sizeof(float) * 3, Properties.OutputVertices_StructuredBuffer,
+                        ref OutputVerticesBuffer);
+                    SetOutputTessellate(sizeof(float) * 3, Properties.OutputNormals_StructuredBuffer,
+                        ref OutputNormalsBuffer);
+                    SetOutputTessellate(sizeof(float) * 4, Properties.OutputTangents_StructuredBuffer,
+                        ref OutputTangentsBuffer);
                     SetOutputTessellate(sizeof(float) * 2, Properties.OutputUVs_StructuredBuffer, ref OutputUVsBuffer);
-                    SetOutputTessellate(sizeof(int), Properties.OutputTriangles_StructuredBuffer, ref OutputTrianglesBuffer);
+                    SetOutputTessellate(sizeof(int), Properties.OutputTriangles_StructuredBuffer,
+                        ref OutputTrianglesBuffer);
 
                     TessellationComputeShader.SetInt(Properties.TriangleCount_Int, inputTriangles);
 
