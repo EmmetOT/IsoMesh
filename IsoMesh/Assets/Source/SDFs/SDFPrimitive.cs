@@ -123,9 +123,9 @@ namespace IsoMesh
 #if UNITY_EDITOR
         private static void CreateNewPrimitive(SDFPrimitiveType type, Vector4 startData)
         {
-            GameObject selection = Selection.activeGameObject;
+            var selection = Selection.activeGameObject;
 
-            GameObject child = new GameObject(type.ToString());
+            var child = new GameObject(type.ToString());
             child.transform.SetParent(selection.transform);
             child.transform.Reset();
 

@@ -14,50 +14,39 @@ namespace IsoMesh
     [CreateAssetMenu]
     public class SDFMeshAsset : ScriptableObject
     {
-        [SerializeField]
-        [ReadOnly]
+        #region Fields
+
+        [SerializeField] [ReadOnly]
         //[PreviewField]
         private Mesh m_sourceMesh;
+
         public Mesh SourceMesh => m_sourceMesh;
 
-        [SerializeField]
-        [HideInInspector]
-        private float[] m_samples;
+        [SerializeField] [HideInInspector] private float[] m_samples;
 
-        [SerializeField]
-        [HideInInspector]
-        private float[] m_packedUVs;
+        [SerializeField] [HideInInspector] private float[] m_packedUVs;
 
         public bool HasUVs => !m_packedUVs.IsNullOrEmpty();
 
-        [SerializeField]
-        [ReadOnly]
+        [SerializeField] [ReadOnly]
         //[ShowIf("IsTessellated")]
         private int m_tessellationLevel = 0;
 
         public bool IsTessellated => m_tessellationLevel > 0;
 
-        [SerializeField]
-        [ReadOnly]
-        private int m_size;
+        [SerializeField] [ReadOnly] private int m_size;
         public int Size => m_size;
 
         public int CellsPerSide => m_size - 1;
         public int PointsPerSide => m_size;
 
-        [SerializeField]
-        [ReadOnly]
-        private float m_padding;
+        [SerializeField] [ReadOnly] private float m_padding;
         public float Padding => m_padding;
 
-        [SerializeField]
-        [ReadOnly]
-        private Vector3 m_minBounds;
+        [SerializeField] [ReadOnly] private Vector3 m_minBounds;
         public Vector3 MinBounds => m_minBounds;
 
-        [SerializeField]
-        [ReadOnly]
-        private Vector3 m_maxBounds;
+        [SerializeField] [ReadOnly] private Vector3 m_maxBounds;
         public Vector3 MaxBounds => m_maxBounds;
 
         public Vector3 Centre => (m_maxBounds + m_minBounds) * 0.5f;
@@ -66,7 +55,8 @@ namespace IsoMesh
 
         public int TotalSize => m_size * m_size * m_size;
 
-        public static void Create(string path, string name, float[] samples, float[] packedUVs, int tessellationLevel, int size, float padding, Mesh sourceMesh, Vector3 minBounds, Vector3 maxBounds)
+        public static void Create(string path, string name, float[] samples, float[] packedUVs, int tessellationLevel,
+            int size, float padding, Mesh sourceMesh, Vector3 minBounds, Vector3 maxBounds)
         {
             SDFMeshAsset asset = Utils.CreateAsset<SDFMeshAsset>(path, name + "_" + size);
             asset.m_sourceMesh = sourceMesh;
@@ -84,6 +74,8 @@ namespace IsoMesh
 #endif
         }
 
+        #endregion
+
         #region Public methods
 
         // note that the true purpose of this class is as a data container for information to be passed to the gpu.
@@ -99,7 +91,7 @@ namespace IsoMesh
                 Mathf.Clamp(input.x, MinBounds.x + boundsOffset, MaxBounds.x - boundsOffset),
                 Mathf.Clamp(input.y, MinBounds.y + boundsOffset, MaxBounds.y - boundsOffset),
                 Mathf.Clamp(input.z, MinBounds.z + boundsOffset, MaxBounds.z - boundsOffset)
-                );
+            );
         }
 
         /// <summary>
@@ -170,7 +162,8 @@ namespace IsoMesh
             float sampleG = GetSignedDistance(x, y + 1, z + 1);
             float sampleH = GetSignedDistance(x + 1, y + 1, z + 1);
 
-            return Utils.TrilinearInterpolate(frac, sampleA, sampleB, sampleC, sampleD, sampleE, sampleF, sampleG, sampleH);
+            return Utils.TrilinearInterpolate(frac, sampleA, sampleB, sampleC, sampleD, sampleE, sampleF, sampleG,
+                sampleH);
         }
 
         // publicly exposing an array just feels wrong to me hehe
@@ -222,7 +215,8 @@ namespace IsoMesh
         /// <summary>
         /// Convert a 3-dimensional cell coordinate into the 1-dimensional cell index it corresponds to.
         /// </summary>
-        public int CellCoordinateToIndex(int x, int y, int z) => (x + y * PointsPerSide + z * PointsPerSide * PointsPerSide);
+        public int CellCoordinateToIndex(int x, int y, int z) =>
+            (x + y * PointsPerSide + z * PointsPerSide * PointsPerSide);
 
         /// <summary>
         /// Get the metadata to be sent to the gpu. Doesn't include the actual sample data, or the point at which this asset's sample data starts in the total sample buffer.

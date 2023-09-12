@@ -62,3 +62,7 @@ Ignore
 /IsoMesh/Logs
 /IsoMesh/Logs.meta
 /IsoMesh/.vs
+
+IsoMesh/.idea/.idea.IsoMesh/.idea/
+
+.idea/

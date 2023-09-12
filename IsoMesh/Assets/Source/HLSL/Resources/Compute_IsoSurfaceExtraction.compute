@@ -131,9 +131,11 @@ void Isosurface_Map(uint3 id : SV_DispatchThreadID)
     int z = id.z;
     
     int index = CellCoordinateToIndex(x, y, z);
+    
     float3 vertex = CellCoordinateToVertex(x, y, z);
     
     _Samples[index] = Map(vertex);
+    // 这里是不是应该直接修改原始sdf的索引的值
 }
 
 bool TryGetEdgeSurfaceIntersection(float sample_from, float sample_to, float3 localPoint_from, float3 localPoint_to, float3 localOrigin, out float3 localIntersectionPoint)
