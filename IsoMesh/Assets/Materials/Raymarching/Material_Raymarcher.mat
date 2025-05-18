@@ -2,20 +2,28 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!21 &2100000
 Material:
-  serializedVersion: 6
+  serializedVersion: 8
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Material_Raymarcher
   m_Shader: {fileID: -6465566751694194690, guid: 1d0b6ab2bfe4c114c9fa0ec170448ad8, type: 3}
-  m_ShaderKeywords: BOOLEAN_724FBFFC18DC4F54A1277B3BD25D4290_ON ENUM_2C14C6FE8E824100A3E880208D1E929F_DEFAULT
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - ENUM_67DA6B115C454E6E90C989231F192889_COLOURED
+  m_InvalidKeywords:
+  - BOOLEAN_724FBFFC18DC4F54A1277B3BD25D4290_ON
+  - ENUM_2C14C6FE8E824100A3E880208D1E929F_DEFAULT
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
-  disabledShaderPasses: []
+  disabledShaderPasses:
+  - MOTIONVECTORS
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -87,6 +95,7 @@ Material:
     - _NormalSmoothing: 0.011
     - _OcclusionStrength: 1
     - _PushIn: 0.002
+    - _QueueControl: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _Smoothness: 0.5
@@ -106,6 +115,7 @@ Material:
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!114 &6950777952192062321
 MonoBehaviour:
   m_ObjectHideFlags: 11
@@ -118,4 +128,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  version: 5
+  version: 9
